@@ -193,13 +193,25 @@ describe("link CRUD", () => {
   });
 
   it("deleteLink removes the hash and the index entry", async () => {
-    await seedLink(storage);
+    const { hash } = await seedLink(storage);
     expect(await slugExists(storage, "ml-notes")).toBe(true);
-    await deleteLink(storage, "ml-notes");
+    await deleteLink(storage, "ml-notes", hash);
     expect(await slugExists(storage, "ml-notes")).toBe(false);
     // Index member also gone
     const remaining = await storage.zrevrange("links:index", 0, -1);
     expect(remaining).toEqual([]);
+  });
+
+  it("createLink writes to the tokens:index reverse-lookup", async () => {
+    const { hash } = await seedLink(storage);
+    expect(await storage.get(`tokens:index:${hash}`)).toBe("ml-notes");
+  });
+
+  it("deleteLink removes the tokens:index entry", async () => {
+    const { hash } = await seedLink(storage);
+    expect(await storage.get(`tokens:index:${hash}`)).toBe("ml-notes");
+    await deleteLink(storage, "ml-notes", hash);
+    expect(await storage.get(`tokens:index:${hash}`)).toBeNull();
   });
 });
 
@@ -240,8 +252,35 @@ describe("findSlugByToken", () => {
   });
 
   it("returns null once the link is deleted", async () => {
-    const { token } = await seedLink(storage);
-    await deleteLink(storage, "ml-notes");
+    const { token, hash } = await seedLink(storage);
+    await deleteLink(storage, "ml-notes", hash);
     expect(await findSlugByToken(storage, token)).toBeNull();
+  });
+
+  it("is O(1) — does not read other links' hashes", async () => {
+    // Regression guard: the old impl scanned links:index + HGETALL per entry.
+    // We can't time precisely, but we can spy that no extra HGETALLs happen
+    // when multiple links exist. Use a counting wrapper around hgetall.
+    const a = await seedLink(storage);
+    const { hash: hashB } = await newEditToken();
+    await createLink(storage, {
+      slug: "another",
+      url: "https://example.com/another",
+      createdAt: 1_700_000_000_000,
+      expiresAt: 0,
+      password: null,
+      ipHash: "ip",
+      editTokenHash: hashB,
+    });
+
+    let hgetallCalls = 0;
+    const orig = storage.hgetall.bind(storage);
+    storage.hgetall = (key: string) => {
+      if (key.startsWith("link:")) hgetallCalls++;
+      return orig(key);
+    };
+
+    expect(await findSlugByToken(storage, a.token)).toBe("ml-notes");
+    expect(hgetallCalls).toBe(0);
   });
 });

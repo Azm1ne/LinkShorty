@@ -21,7 +21,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getStorage } from "@/lib/storage-singleton";
-import { deleteLink } from "@/lib/links";
+import { deleteLink, readEditTokenHash } from "@/lib/links";
 import { listLinks } from "@/lib/admin-list";
 import {
   ADMIN_COOKIE_NAME,
@@ -89,6 +89,8 @@ export async function DELETE(request: Request) {
     );
   }
 
-  await deleteLink(getStorage(), parsed.data.slug);
-  return NextResponse.json({ slug: parsed.data.slug, deleted: true });
+  const slug = parsed.data.slug;
+  const editTokenHash = await readEditTokenHash(getStorage(), slug);
+  await deleteLink(getStorage(), slug, editTokenHash ?? "");
+  return NextResponse.json({ slug, deleted: true });
 }

@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getStorage } from "@/lib/storage-singleton";
 import { readLink, updateLink, deleteLink, findSlugByToken } from "@/lib/links";
+import { hashEditToken } from "@/lib/hash";
 import { validateUrl } from "@/lib/url";
 import { clampExpiry } from "@/lib/expiry";
 import { getOwnHost } from "@/lib/env";
 import { isSameOriginRequest } from "@/lib/csrf";
+
+// `validateUrl` now DNS-resolves the hostname (via `node:dns.promises.lookup`),
+// which is Node-only. Pin this route to the Node runtime explicitly.
+export const runtime = "nodejs";
 
 interface RouteContext {
   params: Promise<{ token: string }>;
@@ -57,7 +62,7 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   const patch = parsed.data;
 
   if (patch.url !== undefined) {
-    const urlResult = validateUrl(patch.url, ownHost());
+    const urlResult = await validateUrl(patch.url, ownHost());
     if (!urlResult.ok) {
       return NextResponse.json({ error: urlResult.reason }, { status: 422 });
     }
@@ -97,6 +102,6 @@ export async function DELETE(request: Request, ctx: RouteContext) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
 
-  await deleteLink(storage, slug);
+  await deleteLink(storage, slug, await hashEditToken(token));
   return NextResponse.json({ slug, deleted: true });
 }

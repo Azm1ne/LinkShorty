@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   DEFAULT_EXPIRY_MINUTES,
   MAX_EXPIRY_MINUTES,
@@ -155,17 +155,29 @@ function CustomRow({
 }
 
 function Readout({ value }: { value: ExpiryValue }) {
-  const text = useMemo(() => {
-    const now = new Date();
-    if (value.kind === "permanent") {
-      return "Permanent — stays live until you delete it.";
-    }
-    const minutes =
-      value.kind === "preset" ? value.preset : value.customMinutes;
-    const expiresAt = new Date(now.getTime() + minutes * 60_000);
-    const formatted = formatExpiry(now, expiresAt);
-    return `Disappears ${formatted.charAt(0).toLowerCase()}${formatted.slice(1)} — ${expiresAt.toLocaleString()}.`;
-  }, [value]);
+  // The time-dependent text (now / expiresAt.toLocaleString()) is computed
+  // only after mount so the server render and the first client render both
+  // emit the same placeholder, avoiding a React hydration mismatch (#418).
+  // `react-hooks/set-state-in-effect` flags this pattern, but the
+  // mount-gated render is the canonical fix for server/client divergence.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
+
+  const text = !mounted
+    ? "\u00A0"
+    : value.kind === "permanent"
+      ? "Permanent — stays live until you delete it."
+      : (() => {
+          const now = new Date();
+          const minutes =
+            value.kind === "preset" ? value.preset : value.customMinutes;
+          const expiresAt = new Date(now.getTime() + minutes * 60_000);
+          const formatted = formatExpiry(now, expiresAt);
+          return `Disappears ${formatted.charAt(0).toLowerCase()}${formatted.slice(1)} — ${expiresAt.toLocaleString()}.`;
+        })();
 
   return (
     <p className="text-sm text-muted-foreground" aria-live="polite">
