@@ -17,8 +17,10 @@ import type { Storage } from "./storage";
 import { generateToken, hashEditToken, hashPassword } from "./hash";
 
 const LINKS_INDEX = "links:index";
+const TOKENS_INDEX = "tokens:index";
 
 const linkKey = (slug: string) => `link:${slug}`;
+const tokenIndexKey = (tokenHash: string) => `${TOKENS_INDEX}:${tokenHash}`;
 
 export interface LinkRecord {
   slug: string;
@@ -75,6 +77,7 @@ export async function createLink(
   }
 
   await storage.zadd(LINKS_INDEX, createdAt, slug);
+  await storage.set(tokenIndexKey(editTokenHash), slug);
 }
 
 /** Read a link from storage. Returns null if missing or expired. */
@@ -176,19 +179,24 @@ export async function updateLink(
   }
 }
 
-/** Delete a link entirely. */
+/**
+ * Delete a link entirely. Caller passes the `editTokenHash` so we don't need
+ * an extra HGETALL just to clean up the tokens:index reverse-lookup entry.
+ */
 export async function deleteLink(
   storage: Storage,
   slug: string,
+  editTokenHash: string,
 ): Promise<void> {
   await storage.del(linkKey(slug));
   await storage.zrem(LINKS_INDEX, slug);
+  await storage.del(tokenIndexKey(editTokenHash));
 }
 
 /**
- * Find the slug whose `editTokenHash` matches SHA-256(token). Scans the
- * links:index — fine for a personal shortener. For higher scale, a reverse
- * lookup index would be needed.
+ * Find the slug whose `editTokenHash` matches SHA-256(token). O(1) via the
+ * `tokens:index` reverse-lookup hash — the create/delete paths keep it in
+ * sync with `link:{slug}.editTokenHash`.
  *
  * Returns the slug, or null if no link matches.
  */
@@ -197,12 +205,5 @@ export async function findSlugByToken(
   token: string,
 ): Promise<string | null> {
   const hash = await hashEditToken(token);
-  const entries = await storage.zrevrange(LINKS_INDEX, 0, -1);
-  for (const entry of entries) {
-    const data = await storage.hgetall(linkKey(entry.member));
-    if (data?.editTokenHash === hash) {
-      return entry.member;
-    }
-  }
-  return null;
+  return storage.get(tokenIndexKey(hash));
 }

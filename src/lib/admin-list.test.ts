@@ -119,7 +119,8 @@ describe("listLinks", () => {
   it("reflects deletions via deleteLink", async () => {
     await seed(storage, { slug: "alpha", createdAt: 1 });
     await seed(storage, { slug: "beta", createdAt: 2 });
-    await deleteLink(storage, "alpha");
+    const { hash } = await newEditToken();
+    await deleteLink(storage, "alpha", hash);
     const result = await listLinks(storage);
     expect(result.links.map((l) => l.slug)).toEqual(["beta"]);
     expect(result.total).toBe(1);
