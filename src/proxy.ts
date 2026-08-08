@@ -2,6 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getStorage } from "@/lib/storage-singleton";
 import { readLink } from "@/lib/links";
 import { GATE_COOKIE_NAME, verifyCookie } from "@/lib/cookie";
+import { assertProductionEnv } from "@/lib/env";
+
+// Validate required env vars at boot. The proxy runs on every request, so
+// this fires on the first request to a missing-var deployment and surfaces
+// a 500 instead of a confusing 404 / redirect-loop. In dev/test, no-ops.
+assertProductionEnv();
 
 /**
  * Next.js 16 proxy. Runs on Edge before any route handler.

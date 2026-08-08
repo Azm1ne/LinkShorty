@@ -13,42 +13,55 @@ import type { Storage } from "./storage";
  *
  * In dev / tests: leave them unset. The in-memory store works for end-to-end
  * smoke testing against localhost. It does NOT persist across processes.
+ *
+ * Production safety: if KV env vars are missing in production, `buildStorage`
+ * throws immediately rather than silently using MemoryStorage — that
+ * fallback is stateful per Vercel function instance and would cause total
+ * data loss between requests. We'd rather fail loud at the first storage
+ * call than have the user discover it via lost links.
  */
 
 declare global {
-  // eslint-disable-next-line no-var
   var __linkShortyStorage: Storage | undefined;
+}
+
+/**
+ * Pure factory: pick the right Storage given an env snapshot. Exported
+ * separately so tests can drive it without mutating `process.env.NODE_ENV`
+ * (which is non-configurable in modern Node).
+ */
+export function buildStorage(
+  env: { NODE_ENV?: string; KV_REST_API_URL?: string; KV_REST_API_TOKEN?: string },
+): Storage {
+  if (env.KV_REST_API_URL && env.KV_REST_API_TOKEN) {
+    return new UpstashStorage(env.KV_REST_API_URL, env.KV_REST_API_TOKEN);
+  }
+  if (env.NODE_ENV === "production") {
+    throw new Error(
+      "KV_REST_API_URL and KV_REST_API_TOKEN must be set in production " +
+        "(provision Upstash via the Vercel Marketplace → Storage tab).",
+    );
+  }
+  return new MemoryStorage();
 }
 
 export function getStorage(): Storage {
   if (globalThis.__linkShortyStorage) {
     return globalThis.__linkShortyStorage;
   }
-
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
-
-  let storage: Storage;
-  if (url && token) {
-    storage = new UpstashStorage(url, token);
-  } else {
-    storage = new MemoryStorage();
-  }
-
-  // Re-use across HMR reloads in dev to preserve state.
-  globalThis.__linkShortyStorage = storage;
-  return storage;
+  globalThis.__linkShortyStorage = buildStorage(process.env);
+  return globalThis.__linkShortyStorage;
 }
 
 /**
- * Test helper: replace the singleton with a fresh in-memory store. Tests
- * call this in `beforeEach`. Not exported in production builds.
+ * Test helper: replace the singleton with a specific Storage instance.
+ * Tests call this in `beforeEach` to get a clean in-memory store.
  */
-export function __setStorage(storage: Storage): void {
+export function setStorageForTests(storage: Storage): void {
   globalThis.__linkShortyStorage = storage;
 }
 
-/** Test helper: reset the singleton to auto-detect from env. */
-export function __resetStorage(): void {
+/** Test helper: clear the singleton so the next `getStorage` re-detects. */
+export function clearStorageForTests(): void {
   delete globalThis.__linkShortyStorage;
 }

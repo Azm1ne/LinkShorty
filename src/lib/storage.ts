@@ -30,6 +30,13 @@ export interface Storage {
   // Hashes (link:{slug})
   hgetall(key: string): Promise<Hash | null>;
   hset(key: string, field: string, value: string): Promise<void>;
+  /**
+   * Multi-field HSET — sets several fields on a hash in one round-trip. The
+   * `MemoryStorage` implementation writes each field separately so test
+   * semantics match the per-field helper; `UpstashStorage` uses the real
+   * `HSET key f1 v1 f2 v2 ...` shape so the wire cost is one HTTP call.
+   */
+  hsetMany(key: string, fields: Record<string, string>): Promise<void>;
   hdel(key: string, field: string): Promise<void>;
   exists(key: string): Promise<boolean>;
   del(key: string): Promise<void>;

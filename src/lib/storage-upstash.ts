@@ -29,6 +29,13 @@ export class UpstashStorage implements Storage {
     await this.r.hset(key, { [field]: value });
   }
 
+  async hsetMany(key: string, fields: Record<string, string>): Promise<void> {
+    // The Upstash client forwards HSET key f1 v1 f2 v2 ... — one HTTP round-trip
+    // regardless of how many fields are in the object.
+    if (Object.keys(fields).length === 0) return;
+    await this.r.hset(key, fields);
+  }
+
   async hdel(key: string, field: string): Promise<void> {
     await this.r.hdel(key, field);
   }

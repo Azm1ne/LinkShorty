@@ -6,17 +6,16 @@
  * + `hashIp` + the `IP_SALT` env lookup into one call so route handlers
  * never forget the salt.
  *
- * For tests, `X-Test-Client-IP` takes precedence in non-production so a
- * deterministic smoke-test IP can be injected without depending on
- * Next.js's dev-server loopback rewrite.
+ * For tests, `X-Test-Client-IP` takes precedence ONLY in non-production so
+ * a deterministic smoke-test IP can be injected without depending on Next.js's
+ * dev-server loopback rewrite. In production, the test header is ignored —
+ * trusting it there would let an attacker rotate IPs at will to dodge
+ * per-IP rate limits.
  */
 import { hashIp } from "./hash";
+import { getIpSalt } from "./env";
 
 export function getClientIp(request: Request): string {
-  const testIp = request.headers.get("x-test-client-ip");
-  if (testIp && process.env.NODE_ENV !== "production") {
-    return testIp.trim();
-  }
   const xff = request.headers.get("x-forwarded-for");
   if (xff) {
     const first = xff.split(",")[0]?.trim();
@@ -24,7 +23,12 @@ export function getClientIp(request: Request): string {
   }
   const xri = request.headers.get("x-real-ip");
   if (xri) return xri.trim();
-  if (testIp) return testIp.trim();
+  // Test-only escape hatch. We do NOT honour this in production — see the
+  // module-level note above.
+  if (process.env.NODE_ENV !== "production") {
+    const testIp = request.headers.get("x-test-client-ip");
+    if (testIp) return testIp.trim();
+  }
   return "unknown";
 }
 
@@ -36,5 +40,5 @@ export function getClientIp(request: Request): string {
  */
 export async function getHashedClientIp(request: Request): Promise<string> {
   const ip = getClientIp(request);
-  return hashIp(ip, process.env.IP_SALT ?? "");
+  return hashIp(ip, getIpSalt());
 }

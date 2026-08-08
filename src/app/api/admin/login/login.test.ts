@@ -5,12 +5,12 @@
  *   - 200 + Set-Cookie on correct password
  *   - 429 after 5 attempts in the window
  *
- * Uses the singleton's `__setStorage` helper to inject an in-memory store.
+ * Uses the singleton's `setStorageForTests` helper to inject an in-memory store.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { POST } from "./route";
-import { __resetStorage, __setStorage } from "@/lib/storage-singleton";
+import { clearStorageForTests, setStorageForTests } from "@/lib/storage-singleton";
 import { MemoryStorage } from "@/lib/storage-memory";
 
 const ORIGINAL_SECRET = process.env.COOKIE_SECRET;
@@ -31,7 +31,7 @@ describe("POST /api/admin/login", () => {
   beforeEach(() => {
     process.env.COOKIE_SECRET = "test-secret-32-bytes-long-please";
     process.env.ADMIN_PASSWORD = "correct-horse-battery-staple";
-    __setStorage(new MemoryStorage());
+    setStorageForTests(new MemoryStorage());
   });
 
   afterEach(() => {
@@ -39,7 +39,7 @@ describe("POST /api/admin/login", () => {
     else process.env.COOKIE_SECRET = ORIGINAL_SECRET;
     if (ORIGINAL_PASSWORD === undefined) delete process.env.ADMIN_PASSWORD;
     else process.env.ADMIN_PASSWORD = ORIGINAL_PASSWORD;
-    __resetStorage();
+    clearStorageForTests();
   });
 
   it("returns 400 when password is missing", async () => {

@@ -18,6 +18,7 @@ import { getStorage } from "@/lib/storage-singleton";
 import { constantTimeEqualHex, hashIp, sha256Hex } from "@/lib/hash";
 import { getClientIp } from "@/lib/request";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { getAdminPassword, getIpSalt } from "@/lib/env";
 import {
   ADMIN_COOKIE_NAME,
   ADMIN_COOKIE_OPTIONS,
@@ -38,10 +39,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const expected = process.env.ADMIN_PASSWORD ?? "";
+  let expected: string;
+  try {
+    expected = getAdminPassword();
+  } catch (err) {
+    return NextResponse.json(
+      { error: "admin-not-configured", message: (err as Error).message },
+      { status: 500 },
+    );
+  }
   if (!expected) {
-    // Refuse to operate without a configured password. Surface as a 500 so
-    // ops notices an unconfigured deployment, not a generic 401.
     return NextResponse.json(
       { error: "admin-not-configured" },
       { status: 500 },
@@ -50,7 +57,7 @@ export async function POST(request: Request) {
 
   const storage = getStorage();
   const ip = getClientIp(request);
-  const ipHash = await hashIp(ip, process.env.IP_SALT ?? "");
+  const ipHash = await hashIp(ip, getIpSalt());
   const rl = await checkRateLimit(storage, "admin-login", ipHash);
   if (!rl.ok) {
     return rateLimitResponse(rl.retryAfterSeconds, "admin-login");

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  __resetStorage,
-  __setStorage,
+  clearStorageForTests,
+  setStorageForTests,
 } from "@/lib/storage-singleton";
 import { MemoryStorage } from "@/lib/storage-memory";
 import { createLink, newEditToken } from "@/lib/links";
@@ -40,7 +40,7 @@ async function seedProtectedLink(storage: MemoryStorage, slug: string, password:
 describe("POST /api/gate/[slug]", () => {
   beforeEach(() => {
     process.env.COOKIE_SECRET = "test-secret-32-bytes-long-please";
-    __setStorage(new MemoryStorage());
+    setStorageForTests(new MemoryStorage());
   });
 
   afterEach(() => {
@@ -49,7 +49,7 @@ describe("POST /api/gate/[slug]", () => {
     } else {
       process.env.COOKIE_SECRET = ORIGINAL_SECRET;
     }
-    __resetStorage();
+    clearStorageForTests();
   });
 
   it("returns 400 when password is missing", async () => {
@@ -70,7 +70,7 @@ describe("POST /api/gate/[slug]", () => {
 
   it("returns 401 for a wrong password", async () => {
     const storage = new MemoryStorage();
-    __setStorage(storage);
+    setStorageForTests(storage);
     await seedProtectedLink(storage, "secret", "correct");
 
     const res = await POST(
@@ -84,7 +84,7 @@ describe("POST /api/gate/[slug]", () => {
 
   it("returns 200 and sets the cookie for a correct password", async () => {
     const storage = new MemoryStorage();
-    __setStorage(storage);
+    setStorageForTests(storage);
     await seedProtectedLink(storage, "secret", "correct");
 
     const res = await POST(
@@ -107,7 +107,7 @@ describe("POST /api/gate/[slug]", () => {
 
   it("429s after 10 wrong attempts within an hour", async () => {
     const storage = new MemoryStorage();
-    __setStorage(storage);
+    setStorageForTests(storage);
     await seedProtectedLink(storage, "secret", "correct");
 
     // First 10 attempts are 401 (the 11th would 429).
@@ -132,7 +132,7 @@ describe("POST /api/gate/[slug]", () => {
 
   it("rate-limits are scoped per slug (a wrong attempt on slug A doesn't block slug B)", async () => {
     const storage = new MemoryStorage();
-    __setStorage(storage);
+    setStorageForTests(storage);
     await seedProtectedLink(storage, "slug-a", "correct");
     await seedProtectedLink(storage, "slug-b", "correct");
 

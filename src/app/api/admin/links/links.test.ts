@@ -7,7 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GET, DELETE } from "./route";
-import { __resetStorage, __setStorage } from "@/lib/storage-singleton";
+import { clearStorageForTests, setStorageForTests } from "@/lib/storage-singleton";
 import { MemoryStorage } from "@/lib/storage-memory";
 import { createLink, newEditToken } from "@/lib/links";
 import { signAdminCookie } from "@/lib/cookie";
@@ -53,13 +53,13 @@ function makeDeleteRequest(cookie: string | null, slug: string): Request {
 describe("admin /api/admin/links", () => {
   beforeEach(() => {
     process.env.COOKIE_SECRET = "test-secret-32-bytes-long-please";
-    __setStorage(new MemoryStorage());
+    setStorageForTests(new MemoryStorage());
   });
 
   afterEach(() => {
     if (ORIGINAL_SECRET === undefined) delete process.env.COOKIE_SECRET;
     else process.env.COOKIE_SECRET = ORIGINAL_SECRET;
-    __resetStorage();
+    clearStorageForTests();
   });
 
   it("returns 401 without a cookie", async () => {
@@ -74,7 +74,7 @@ describe("admin /api/admin/links", () => {
 
   it("returns the latest links with a valid cookie", async () => {
     const storage = new MemoryStorage();
-    __setStorage(storage);
+    setStorageForTests(storage);
     await seed(storage, "alpha", 1);
     await seed(storage, "beta", 2);
     await seed(storage, "gamma", 3);
@@ -93,7 +93,7 @@ describe("admin /api/admin/links", () => {
 
   it("supports prefix search via the search query param", async () => {
     const storage = new MemoryStorage();
-    __setStorage(storage);
+    setStorageForTests(storage);
     await seed(storage, "apple", 1);
     await seed(storage, "apricot", 2);
     await seed(storage, "banana", 3);
@@ -111,7 +111,7 @@ describe("admin /api/admin/links", () => {
 
   it("deletes a link and reports success", async () => {
     const storage = new MemoryStorage();
-    __setStorage(storage);
+    setStorageForTests(storage);
     await seed(storage, "doomed", 1);
     await seed(storage, "keeper", 2);
 

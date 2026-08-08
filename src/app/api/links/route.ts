@@ -8,6 +8,7 @@ import { clampExpiry } from "@/lib/expiry";
 import { getHashedClientIp } from "@/lib/request";
 import { generateAutoSlug } from "@/lib/auto-slug";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { getBaseUrl, getOwnHost } from "@/lib/env";
 
 const RequestSchema = z.object({
   url: z.string().min(1).max(2048),
@@ -17,12 +18,7 @@ const RequestSchema = z.object({
 });
 
 function ownHost(): string {
-  return (
-    process.env.NEXT_PUBLIC_BASE_URL?.replace(/^https?:\/\//, "").replace(
-      /\/.*$/,
-      "",
-    ) ?? "linkshorty.vercel.app"
-  );
+  return getOwnHost();
 }
 
 export async function POST(request: Request) {
@@ -104,7 +100,7 @@ export async function POST(request: Request) {
     editTokenHash: token.hash,
   });
 
-  const shortUrl = `${process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3000"}/${resolvedSlug}`;
+  const shortUrl = `${getBaseUrl()}/${resolvedSlug}`;
 
   return NextResponse.json(
     {

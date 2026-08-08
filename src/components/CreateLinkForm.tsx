@@ -185,6 +185,8 @@ function baseUrl(): string {
   if (typeof window !== "undefined") {
     return window.location.host;
   }
+  // Server-rendered preview — falls back to localhost in dev. In production
+  // the proxy handles redirects so this path is rarely hit there.
   return process.env.NEXT_PUBLIC_BASE_URL?.replace(/^https?:\/\//, "") ??
-    "linkshorty.vercel.app";
+    "localhost:3000";
 }

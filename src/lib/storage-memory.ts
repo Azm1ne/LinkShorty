@@ -70,6 +70,18 @@ export class MemoryStorage implements Storage {
     this.hashes.set(key, entry);
   }
 
+  async hsetMany(key: string, fields: Record<string, string>): Promise<void> {
+    const existing = this.hashes.get(key);
+    if (existing && this.isExpired(existing.expiresAt)) {
+      this.hashes.delete(key);
+    }
+    const entry = this.hashes.get(key) ?? { value: {}, expiresAt: null };
+    for (const [field, value] of Object.entries(fields)) {
+      entry.value[field] = value;
+    }
+    this.hashes.set(key, entry);
+  }
+
   async hdel(key: string, field: string): Promise<void> {
     const entry = this.hashes.get(key);
     if (!entry || this.isExpired(entry.expiresAt)) return;

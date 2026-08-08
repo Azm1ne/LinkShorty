@@ -4,7 +4,21 @@ A path-based, anonymous link shortener with human-readable slugs, expiring links
 
 ## Status
 
-**Pre-build.** No code yet. The 12-phase build is tracked in [GitHub Issues](https://github.com/Azm1ne/LinkShorty/issues). Phase 1 (Next.js scaffold + empty Vercel deploy) is the next action.
+**Build complete. Ready to deploy.**
+
+All 12 phases are done, 163 tests pass, and `next build` succeeds. See [DEPLOY.md](./DEPLOY.md) for step-by-step deployment instructions.
+
+What's implemented:
+
+- Next.js 16 App Router with Turbopack and Edge runtime proxy (`proxy.ts`)
+- Path-based short links with custom or auto-generated human-readable slugs
+- Expiring links via Upstash Redis native TTL
+- Password-protected links with per-link cookie sessions
+- Anonymous creation — secret manage link shown once at creation time
+- Admin dashboard (single password) for listing and deleting all links
+- Rate limiting across all endpoints (IP-hashed via Web Crypto)
+- Slug availability check + suggestion engine
+- Custom 404 page, dark mode polish, keyboard accessibility
 
 ## Locked decisions
 
@@ -61,12 +75,14 @@ The full build is broken into 12 independently testable phases. Don't skip ahead
 ## Environment
 
 ```
-KV_REST_API_URL          auto-injected
-KV_REST_API_TOKEN        auto-injected
+KV_REST_API_URL          auto-injected from Upstash Marketplace integration
+KV_REST_API_TOKEN        auto-injected from Upstash Marketplace integration
 ADMIN_PASSWORD           long and random
 COOKIE_SECRET            32+ random bytes, base64
 IP_SALT                  32+ random bytes, base64
 NEXT_PUBLIC_BASE_URL     https://linkshorty.vercel.app
 ```
+
+> `KV_REST_API_URL` and `KV_REST_API_TOKEN` come from the Upstash Marketplace integration automatically — **do NOT set them manually**.
 
 Generate secrets: `openssl rand -base64 32`

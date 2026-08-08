@@ -14,7 +14,7 @@
  */
 
 import type { Storage } from "./storage";
-import { generateToken, hashEditToken, hashIp, hashPassword } from "./hash";
+import { generateToken, hashEditToken, hashPassword } from "./hash";
 
 const LINKS_INDEX = "links:index";
 
@@ -57,13 +57,18 @@ export async function createLink(
   const { slug, url, expiresAt, password, ipHash, editTokenHash, createdAt } = input;
   const passwordHash = password ? await hashPassword(password, slug) : "";
 
-  await storage.hset(linkKey(slug), "url", url);
-  await storage.hset(linkKey(slug), "createdAt", String(createdAt));
-  await storage.hset(linkKey(slug), "expiresAt", String(expiresAt));
-  await storage.hset(linkKey(slug), "editTokenHash", editTokenHash);
-  await storage.hset(linkKey(slug), "passwordHash", passwordHash);
-  await storage.hset(linkKey(slug), "createdByIp", ipHash);
-  await storage.hset(linkKey(slug), "previousUrl", "");
+  // One multi-field HSET instead of seven per-field writes. On Upstash this
+  // collapses the wire cost from 7 round-trips to 1 (≈300 ms saved per create
+  // at typical Upstash REST latencies).
+  await storage.hsetMany(linkKey(slug), {
+    url,
+    createdAt: String(createdAt),
+    expiresAt: String(expiresAt),
+    editTokenHash,
+    passwordHash,
+    createdByIp: ipHash,
+    previousUrl: "",
+  });
 
   if (expiresAt > 0) {
     await storage.expireAt(linkKey(slug), Math.floor(expiresAt / 1000));

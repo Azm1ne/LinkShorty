@@ -20,6 +20,7 @@
  */
 
 import { constantTimeEqualHex, hmacHex } from "@/lib/hash";
+import { getCookieSecret } from "@/lib/env";
 
 export const GATE_COOKIE_NAME = "ls_gate";
 export const ADMIN_COOKIE_NAME = "ls_admin";
@@ -37,7 +38,7 @@ export interface AdminGrant {
 }
 
 function getSecret(): string {
-  return process.env.COOKIE_SECRET ?? "";
+  return getCookieSecret();
 }
 
 async function signPayload(message: string): Promise<string> {

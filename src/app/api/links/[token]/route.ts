@@ -4,6 +4,7 @@ import { getStorage } from "@/lib/storage-singleton";
 import { readLink, updateLink, deleteLink, findSlugByToken } from "@/lib/links";
 import { validateUrl } from "@/lib/url";
 import { clampExpiry } from "@/lib/expiry";
+import { getOwnHost } from "@/lib/env";
 
 interface RouteContext {
   params: Promise<{ token: string }>;
@@ -22,12 +23,7 @@ const PatchSchema = z
   );
 
 function ownHost(): string {
-  return (
-    process.env.NEXT_PUBLIC_BASE_URL?.replace(/^https?:\/\//, "").replace(
-      /\/.*$/,
-      "",
-    ) ?? "linkshorty.vercel.app"
-  );
+  return getOwnHost();
 }
 
 export async function PATCH(request: Request, ctx: RouteContext) {
