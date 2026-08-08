@@ -8,6 +8,7 @@ import { clampExpiry } from "@/lib/expiry";
 import { hashIp } from "@/lib/hash";
 import { getClientIp } from "@/lib/request";
 import { generateAutoSlug } from "@/lib/auto-slug";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 const RequestSchema = z.object({
   url: z.string().min(1).max(2048),
@@ -83,6 +84,16 @@ export async function POST(request: Request) {
 
   const ip = getClientIp(request);
   const ipHash = await hashIp(ip, process.env.IP_SALT ?? "");
+
+  // Tiered rate limit (T10): after validation, before persisting.
+  // Malformed input never reaches here, so the create limit isn't penalised
+  // for bad payloads. Slug-check has its own counter on /api/links/check.
+  const rateTier = minutes > 0 ? "create-expiring" : "create-permanent";
+  const rl = await checkRateLimit(storage, rateTier, ipHash);
+  if (!rl.ok) {
+    return rateLimitResponse(rl.retryAfterSeconds, rateTier);
+  }
+
   const token = await newEditToken();
 
   await createLink(storage, {
