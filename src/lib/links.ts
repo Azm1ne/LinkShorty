@@ -183,3 +183,25 @@ export async function deleteLink(
   await storage.del(linkKey(slug));
   await storage.zrem(LINKS_INDEX, slug);
 }
+
+/**
+ * Find the slug whose `editTokenHash` matches SHA-256(token). Scans the
+ * links:index — fine for a personal shortener. For higher scale, a reverse
+ * lookup index would be needed.
+ *
+ * Returns the slug, or null if no link matches.
+ */
+export async function findSlugByToken(
+  storage: Storage,
+  token: string,
+): Promise<string | null> {
+  const hash = await hashEditToken(token);
+  const entries = await storage.zrevrange(LINKS_INDEX, 0, -1);
+  for (const entry of entries) {
+    const data = await storage.hgetall(linkKey(entry.member));
+    if (data?.editTokenHash === hash) {
+      return entry.member;
+    }
+  }
+  return null;
+}

@@ -3,6 +3,7 @@ import { MemoryStorage } from "./storage-memory";
 import {
   createLink,
   deleteLink,
+  findSlugByToken,
   newEditToken,
   readLink,
   slugExists,
@@ -156,5 +157,48 @@ describe("link CRUD", () => {
     // Index member also gone
     const remaining = await storage.zrevrange("links:index", 0, -1);
     expect(remaining).toEqual([]);
+  });
+});
+
+describe("findSlugByToken", () => {
+  let storage: MemoryStorage;
+  beforeEach(() => {
+    storage = new MemoryStorage();
+  });
+
+  it("returns the slug when the token matches the stored hash", async () => {
+    const { token } = await seedLink(storage);
+    expect(await findSlugByToken(storage, token)).toBe("ml-notes");
+  });
+
+  it("returns null when the token doesn't match any link", async () => {
+    await seedLink(storage);
+    expect(await findSlugByToken(storage, "wrong-token")).toBeNull();
+  });
+
+  it("returns null when there are no links", async () => {
+    expect(await findSlugByToken(storage, "anything")).toBeNull();
+  });
+
+  it("finds the right slug when multiple links exist", async () => {
+    const a = await seedLink(storage);
+    const { token: tokenB, hash: hashB } = await newEditToken();
+    await createLink(storage, {
+      slug: "another",
+      url: "https://example.com/another",
+      createdAt: 1_700_000_000_000,
+      expiresAt: 0,
+      password: null,
+      ipHash: "ip",
+      editTokenHash: hashB,
+    });
+    expect(await findSlugByToken(storage, a.token)).toBe("ml-notes");
+    expect(await findSlugByToken(storage, tokenB)).toBe("another");
+  });
+
+  it("returns null once the link is deleted", async () => {
+    const { token } = await seedLink(storage);
+    await deleteLink(storage, "ml-notes");
+    expect(await findSlugByToken(storage, token)).toBeNull();
   });
 });
