@@ -159,7 +159,7 @@ export function EditLinkForm({
         </p>
       </header>
 
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+      <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning-foreground">
         <strong className="font-medium">Heads up —</strong> if you lose this
         URL, the link can&apos;t be recovered. Bookmark it or copy it somewhere
         safe.
@@ -346,13 +346,13 @@ function ShortLinkBox({
   shortUrl: string;
   manageUrl: string;
 }) {
-  const [copied, setCopied] = useState<"short" | "manage" | null>(null);
-
-  function copy(text: string, which: "short" | "manage") {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(which);
-      setTimeout(() => setCopied(null), 1500);
-    });
+  async function copy(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error("Couldn't copy. Select the text and copy manually.");
+    }
   }
 
   return (
@@ -363,10 +363,11 @@ function ShortLinkBox({
           <code className="flex-1 truncate font-mono text-sm">{shortUrl}</code>
           <button
             type="button"
-            onClick={() => copy(shortUrl, "short")}
+            onClick={() => copy(shortUrl, "Short link")}
+            aria-label="Copy short link"
             className="rounded-md border border-input px-2 py-1 text-xs hover:border-foreground hover:text-foreground"
           >
-            {copied === "short" ? "Copied" : "Copy"}
+            Copy
           </button>
         </div>
       </div>
@@ -378,10 +379,11 @@ function ShortLinkBox({
           </code>
           <button
             type="button"
-            onClick={() => copy(manageUrl, "manage")}
+            onClick={() => copy(manageUrl, "Manage link")}
+            aria-label="Copy manage link"
             className="rounded-md border border-input px-2 py-1 text-xs hover:border-foreground hover:text-foreground"
           >
-            {copied === "manage" ? "Copied" : "Copy"}
+            Copy
           </button>
         </div>
       </div>

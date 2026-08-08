@@ -36,7 +36,12 @@ export function SlugInput({ baseUrl, value, onChange, id = "slug" }: SlugInputPr
     }
 
     if (value.trim() === "") {
-      setAvailability({ state: "idle" });
+      // Defer the reset so it isn't a synchronous setState inside this effect
+      // (would cascade renders per react-hooks/set-state-in-effect).
+      debounceRef.current = setTimeout(() => {
+        setAvailability({ state: "idle" });
+        debounceRef.current = null;
+      }, 0);
       return;
     }
 
@@ -157,7 +162,7 @@ function AvailabilityFeedback({
   if (state.state === "available") {
     return (
       <p
-        className="text-xs text-emerald-700 dark:text-emerald-300"
+        className="text-xs text-success-foreground"
         aria-live="polite"
       >
         Available — <span className="font-mono">{state.slug}</span>

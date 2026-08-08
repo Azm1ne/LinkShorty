@@ -3,14 +3,12 @@
 import { toast } from "sonner";
 
 interface SuccessCardProps {
-  slug: string;
   editToken: string;
   shortUrl: string;
   manageUrl: string;
 }
 
 export function SuccessCard({
-  slug,
   editToken,
   shortUrl,
   manageUrl,
@@ -44,8 +42,8 @@ export function SuccessCard({
         </p>
       </header>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
-        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+      <div className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
+        <p className="text-sm font-medium text-warning-foreground">
           The manage link is shown once. It cannot be recovered. Losing it
           means losing control of this link.
         </p>
