@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { mapApiError } from "@/lib/error-messages";
 
 /**
  * Admin link management view. Lists links newest-first, supports slug
@@ -79,7 +80,7 @@ export function AdminLinksView() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        const message = body.error ?? "Couldn't delete link.";
+        const message = mapApiError(body, "Couldn't delete link.");
         toast.error(message);
         return;
       }

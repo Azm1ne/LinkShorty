@@ -16,7 +16,8 @@ export type RateLimitType =
   | "create-expiring"
   | "create-permanent"
   | "slug-check"
-  | "admin-login";
+  | "admin-login"
+  | "gate-attempt";
 
 interface TierConfig {
   key: string;
@@ -45,7 +46,38 @@ const TIER_CONFIG: Record<RateLimitType, TierConfig> = {
     limit: 5,
     windowSeconds: 900, // 15 minutes
   },
+  "gate-attempt": {
+    // Per-slug gating requires a key that includes the slug. The shape
+    // becomes `rate:gate-attempt:{slug}:{ipHash}` — built at the call site
+    // (see checkRateLimitFor).
+    key: "rate:gate-attempt",
+    limit: 10,
+    windowSeconds: 3_600, // 1 hour
+  },
 };
+
+/**
+ * Per-slug variant of `checkRateLimit` for the password gate. The spec
+ * calls for 10 attempts per (slug, IP) per hour — the central helper can
+ * only express per-IP tiers, so the slug is encoded into the counter key
+ * here.
+ */
+export async function checkRateLimitFor(
+  storage: Storage,
+  type: "gate-attempt",
+  scope: string,
+  ipHash: string,
+): Promise<RateLimitResult> {
+  const config = TIER_CONFIG[type];
+  const key = `${config.key}:${scope}:${ipHash}`;
+  const { count } = await storage.incrWithTtl(key, config.windowSeconds);
+  if (count <= config.limit) {
+    return { ok: true };
+  }
+  const ttl = await storage.ttl(key);
+  const retryAfterSeconds = ttl !== null && ttl > 0 ? ttl : 60;
+  return { ok: false, retryAfterSeconds };
+}
 
 export type RateLimitResult =
   | { ok: true }

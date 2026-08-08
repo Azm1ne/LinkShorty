@@ -21,7 +21,11 @@ import { z } from "zod";
 import { getStorage } from "@/lib/storage-singleton";
 import { deleteLink } from "@/lib/links";
 import { listLinks } from "@/lib/admin-list";
-import { ADMIN_COOKIE_NAME, verifyAdminCookie } from "@/lib/cookie";
+import {
+  ADMIN_COOKIE_NAME,
+  readCookieFromRequest,
+  verifyAdminCookie,
+} from "@/lib/cookie";
 
 const DeleteSchema = z.object({
   slug: z
@@ -32,36 +36,14 @@ const DeleteSchema = z.object({
 });
 
 /**
- * Extract the `ls_admin` cookie value from a `Cookie` header. Returns the
- * decoded raw value or null if absent.
- *
- * Next.js encodes cookie values when they contain characters outside the
- * cookie-octet range, so we decode here. The signing scheme sees the raw
- * `|` separators.
+ * Verify the request holds a valid admin session. Reads the cookie from the
+ * raw `Cookie` header (rather than `next/headers` `cookies()`) so this route
+ * stays unit-testable from a Node Request without a request context. The
+ * `/admin` page server component uses `next/headers` for the same cookie —
+ * both paths run the same `verifyAdminCookie` against the same value.
  */
-function readCookieValue(request: Request): string | null {
-  const header = request.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq < 0) continue;
-    const name = part.slice(0, eq).trim();
-    if (name !== ADMIN_COOKIE_NAME) continue;
-    let raw = part.slice(eq + 1).trim();
-    if (raw.startsWith('"') && raw.endsWith('"')) {
-      raw = raw.slice(1, -1);
-    }
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      return raw;
-    }
-  }
-  return null;
-}
-
 async function requireAdmin(request: Request): Promise<boolean> {
-  const raw = readCookieValue(request);
+  const raw = readCookieFromRequest(request, ADMIN_COOKIE_NAME);
   if (!raw) return false;
   const grant = await verifyAdminCookie(raw);
   return grant !== null;

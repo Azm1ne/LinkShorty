@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { mapApiError } from "@/lib/error-messages";
 
 /**
  * Single-password gate for `/admin`. Submits to `/api/admin/login` and
@@ -37,8 +38,10 @@ export function AdminLoginForm() {
       }
 
       if (!res.ok) {
-        setError("Wrong password.");
-        toast.error("Wrong password.");
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        const message = mapApiError(err, "Wrong password.");
+        setError(message);
+        toast.error(message);
         return;
       }
 

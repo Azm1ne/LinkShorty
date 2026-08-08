@@ -120,6 +120,49 @@ describe("link CRUD", () => {
     expect(link?.previousUrl).toBeNull();
   });
 
+  it("updateLink setting expiresAt to 0 clears any existing TTL", async () => {
+    // Regression: PATCH to permanent used to leave the old EXPIREAT intact,
+    // so Redis would evict the hash early and `readLink` would return null.
+    const baseTime = 2_000_000_000_000;
+    const ctrl = new MemoryStorage(() => baseTime);
+    const { hash } = await newEditToken();
+    await createLink(ctrl, {
+      slug: "flip",
+      url: "https://example.com",
+      createdAt: baseTime,
+      expiresAt: baseTime + 60_000,
+      password: null,
+      ipHash: "ip",
+      editTokenHash: hash,
+    });
+    expect(await ctrl.ttl("link:flip")).toBe(60);
+
+    await updateLink(ctrl, "flip", { expiresAt: 0 });
+
+    expect(await ctrl.ttl("link:flip")).toBeNull();
+    const link = await readLink(ctrl, "flip");
+    expect(link?.expiresAt).toBe(0);
+  });
+
+  it("updateLink changing expiresAt to a later time updates the TTL", async () => {
+    const baseTime = 2_000_000_000_000;
+    const ctrl = new MemoryStorage(() => baseTime);
+    const { hash } = await newEditToken();
+    await createLink(ctrl, {
+      slug: "extend",
+      url: "https://example.com",
+      createdAt: baseTime,
+      expiresAt: baseTime + 60_000,
+      password: null,
+      ipHash: "ip",
+      editTokenHash: hash,
+    });
+    expect(await ctrl.ttl("link:extend")).toBe(60);
+
+    await updateLink(ctrl, "extend", { expiresAt: baseTime + 600_000 });
+    expect(await ctrl.ttl("link:extend")).toBe(600);
+  });
+
   it("updateLink changes the password", async () => {
     await seedLink(storage);
     await updateLink(storage, "ml-notes", { password: "new-pw" });

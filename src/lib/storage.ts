@@ -36,6 +36,8 @@ export interface Storage {
 
   // TTLs
   expireAt(key: string, unixSeconds: number): Promise<void>;
+  /** Remove any TTL from the key. The key survives. */
+  clearExpiry(key: string): Promise<void>;
   /** Seconds until key expires, or null if no TTL or key doesn't exist. */
   ttl(key: string): Promise<number | null>;
 

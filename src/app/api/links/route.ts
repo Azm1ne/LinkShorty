@@ -5,8 +5,7 @@ import { createLink, newEditToken, slugExists } from "@/lib/links";
 import { validateSlug } from "@/lib/slug";
 import { validateUrl } from "@/lib/url";
 import { clampExpiry } from "@/lib/expiry";
-import { hashIp } from "@/lib/hash";
-import { getClientIp } from "@/lib/request";
+import { getHashedClientIp } from "@/lib/request";
 import { generateAutoSlug } from "@/lib/auto-slug";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
@@ -82,8 +81,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "slug-taken" }, { status: 409 });
   }
 
-  const ip = getClientIp(request);
-  const ipHash = await hashIp(ip, process.env.IP_SALT ?? "");
+  const ipHash = await getHashedClientIp(request);
 
   // Tiered rate limit (T10): after validation, before persisting.
   // Malformed input never reaches here, so the create limit isn't penalised

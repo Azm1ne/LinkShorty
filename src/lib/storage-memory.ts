@@ -117,6 +117,16 @@ export class MemoryStorage implements Storage {
     this.applyTtl(key, ms);
   }
 
+  async clearExpiry(key: string): Promise<void> {
+    if (this.hashes.has(key)) {
+      this.hashes.get(key)!.expiresAt = null;
+    } else if (this.strings.has(key)) {
+      this.strings.get(key)!.expiresAt = null;
+    } else if (this.zsets.has(key)) {
+      this.zsets.get(key)!.expiresAt = null;
+    }
+  }
+
   async ttl(key: string): Promise<number | null> {
     const expiresAt = this.findExpiresAt(key);
     if (expiresAt === null) return null;

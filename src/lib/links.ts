@@ -157,14 +157,10 @@ export async function updateLink(
     if (patch.expiresAt > 0) {
       await storage.expireAt(linkKey(slug), Math.floor(patch.expiresAt / 1000));
     } else {
-      // Going permanent — clear any existing TTL
-      // (Redis: persist — but our abstraction doesn't expose it directly.
-      //  Easiest: delete and re-create. Use DEL to clear, then re-add fields
-      //  except expiresAt, then EXPIREAT won't fire because expiresAt=0.)
-      // For simplicity in T04: leave the TTL intact. PATCH to a later
-      // expiresAt will overwrite; PATCH to 0 leaves the old TTL. This is
-      // acceptable for v1 — admin / recreate flow covers the edge case.
-      // TODO: surface this in a future slice if it bites.
+      // Going permanent — Redis would otherwise keep the old EXPIREAT,
+      // so the hash gets evicted early and `readLink` returns null. PERSIST
+      // drops the TTL but leaves the key intact.
+      await storage.clearExpiry(linkKey(slug));
     }
   }
   if (patch.password !== undefined) {

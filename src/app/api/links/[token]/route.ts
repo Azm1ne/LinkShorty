@@ -32,9 +32,6 @@ function ownHost(): string {
 
 export async function PATCH(request: Request, ctx: RouteContext) {
   const { token } = await ctx.params;
-  if (!token) {
-    return NextResponse.json({ error: "missing-token" }, { status: 400 });
-  }
 
   const body = await request.json().catch(() => null);
   const parsed = PatchSchema.safeParse(body);
@@ -88,9 +85,6 @@ export async function PATCH(request: Request, ctx: RouteContext) {
 
 export async function DELETE(_request: Request, ctx: RouteContext) {
   const { token } = await ctx.params;
-  if (!token) {
-    return NextResponse.json({ error: "missing-token" }, { status: 400 });
-  }
 
   const storage = getStorage();
   const slug = await findSlugByToken(storage, token);

@@ -2,12 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { mapApiError } from "@/lib/error-messages";
 
 interface PasswordGateFormProps {
   slug: string;
-  /** Destination URL, shown after a successful unlock — the address bar will
-   * display it once the proxy redirects. */
-  destinationUrl: string;
+  /** Hint shown beneath the password input — the real destination is the
+   * `destination` returned by the gate API. */
+  fallbackDestinationUrl: string;
 }
 
 interface GateSuccess {
@@ -15,11 +16,11 @@ interface GateSuccess {
 }
 
 interface GateError {
-  error: "invalid-password" | "rate-limited" | "missing-password" | "network";
+  error?: string;
   retryAfterSeconds?: number;
 }
 
-export function PasswordGateForm({ slug, destinationUrl }: PasswordGateFormProps) {
+export function PasswordGateForm({ slug, fallbackDestinationUrl }: PasswordGateFormProps) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +52,7 @@ export function PasswordGateForm({ slug, destinationUrl }: PasswordGateFormProps
         const data = (await res.json()) as GateSuccess;
         // Server-side redirect to the destination. The proxy will then see
         // the cookie and let it through.
-        window.location.href = data.destination ?? destinationUrl;
+        window.location.href = data.destination ?? fallbackDestinationUrl;
         return;
       }
 
@@ -71,7 +72,7 @@ export function PasswordGateForm({ slug, destinationUrl }: PasswordGateFormProps
       }
 
       // 401 and other failures fall under the same generic message.
-      setError("Incorrect password. Please try again.");
+      setError(mapApiError({ error: "invalid-password" }, "Incorrect password. Please try again."));
       // Refresh the page so the server-rendered error state is fresh, but
       // soft-navigation so we don't lose state.
       void router.refresh();

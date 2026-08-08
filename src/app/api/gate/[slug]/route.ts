@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { timingSafeEqual } from "node:crypto";
 import { getStorage } from "@/lib/storage-singleton";
 import { readLink, readPasswordHash } from "@/lib/links";
-import { hashIp, hashPassword } from "@/lib/hash";
-import { getClientIp } from "@/lib/request";
+import {
+  constantTimeEqualHex,
+  hashPassword,
+} from "@/lib/hash";
+import { getHashedClientIp } from "@/lib/request";
+import { checkRateLimitFor, rateLimitResponse } from "@/lib/rate-limit";
 import {
   GATE_COOKIE_NAME,
   GATE_COOKIE_OPTIONS,
@@ -21,8 +24,6 @@ const BodySchema = z.object({
   password: z.string().min(1).max(512),
 });
 
-const GATE_WINDOW_SECONDS = 3_600; // 1 hour
-const GATE_LIMIT = 10;
 const DEFAULT_COOKIE_TTL_SECONDS = 24 * 60 * 60; // 24h for permanent links
 
 function isProd(): boolean {
@@ -31,9 +32,6 @@ function isProd(): boolean {
 
 export async function POST(request: Request, ctx: RouteContext) {
   const { slug } = await ctx.params;
-  if (!slug) {
-    return NextResponse.json({ error: "missing-slug" }, { status: 400 });
-  }
 
   // Parse body first so we don't even look up storage for malformed input.
   const raw = await request.json().catch(() => null);
@@ -44,31 +42,16 @@ export async function POST(request: Request, ctx: RouteContext) {
 
   const storage = getStorage();
 
-  // Resolve IP once — used both for rate limiting and hashing.
-  const ip = getClientIp(request);
-  const ipSalt = process.env.IP_SALT ?? "";
-  const ipHash = await hashIp(ip, ipSalt);
-
-  // Rate limit BEFORE password verification. We want a flood of wrong
-  // guesses to hit the limiter too.
-  const rateKey = `rate:gate:${slug}:${ipHash}`;
-  const { count } = await storage.incrWithTtl(rateKey, GATE_WINDOW_SECONDS);
-  if (count > GATE_LIMIT) {
-    const ttl = await storage.ttl(rateKey);
-    const retryAfter = ttl !== null && ttl > 0 ? ttl : 60;
-    return NextResponse.json(
-      {
-        error: "rate-limited",
-        retryAfterSeconds: retryAfter,
-      },
-      {
-        status: 429,
-        headers: { "Retry-After": String(retryAfter) },
-      },
-    );
+  // Rate-limit BEFORE password verification. We want a flood of wrong
+  // guesses to hit the limiter too. Spec: 10 attempts per (slug, IP) per hour.
+  const ipHash = await getHashedClientIp(request);
+  const rl = await checkRateLimitFor(storage, "gate-attempt", slug, ipHash);
+  if (!rl.ok) {
+    return rateLimitResponse(rl.retryAfterSeconds, "gate-attempt");
   }
 
-  // Verify the link exists and is still valid.
+  // Verify the link exists and is still valid. Only slug-specific limits
+  // live here — the IP-wide limit applies via rl above.
   const link = await readLink(storage, slug);
   if (!link || !link.hasPassword) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
@@ -82,22 +65,7 @@ export async function POST(request: Request, ctx: RouteContext) {
   }
 
   const submittedHash = await hashPassword(parsed.data.password, slug);
-
-  // Constant-time comparison. Both sides are SHA-256 → 64 hex chars → 32
-  // bytes, so timingSafeEqual on Buffers works.
-  let passwordMatches = false;
-  try {
-    const a = Buffer.from(storedHash, "hex");
-    const b = Buffer.from(submittedHash, "hex");
-    if (a.length === b.length) {
-      passwordMatches = timingSafeEqual(a, b);
-    }
-    // length mismatch → passwordMatches stays false
-  } catch {
-    passwordMatches = false;
-  }
-
-  if (!passwordMatches) {
+  if (!constantTimeEqualHex(storedHash, submittedHash)) {
     return NextResponse.json({ error: "invalid-password" }, { status: 401 });
   }
 

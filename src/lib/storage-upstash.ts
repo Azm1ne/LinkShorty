@@ -46,6 +46,11 @@ export class UpstashStorage implements Storage {
     await this.r.expireat(key, unixSeconds);
   }
 
+  async clearExpiry(key: string): Promise<void> {
+    // PERSIST removes the TTL but keeps the key (Redis 2.6+).
+    await this.r.persist(key);
+  }
+
   async ttl(key: string): Promise<number | null> {
     const result = await this.r.ttl(key);
     if (result === -1 || result === -2) return null;

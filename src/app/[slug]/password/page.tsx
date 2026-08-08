@@ -34,7 +34,7 @@ export default async function PasswordPage({ params }: PasswordPageProps) {
   return (
     <main className="flex flex-1 items-start justify-center px-6 py-16">
       <div className="w-full max-w-md">
-        <PasswordGateForm slug={slug} destinationUrl={link.url} />
+        <PasswordGateForm slug={slug} fallbackDestinationUrl={link.url} />
       </div>
     </main>
   );

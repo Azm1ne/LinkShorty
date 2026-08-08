@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ExpiryPicker, type ExpiryValue } from "./ExpiryPicker";
+import { mapApiError } from "@/lib/error-messages";
 
 interface EditLinkFormProps {
   token: string;
@@ -103,7 +104,7 @@ export function EditLinkForm({
 
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as ApiError;
-        const message = mapError(err.error);
+        const message = mapApiError(err, "Something went wrong. Please try again.");
         setError(message);
         toast.error(message);
         return;
@@ -134,7 +135,7 @@ export function EditLinkForm({
       });
       if (!res.ok) {
         const err = (await res.json().catch(() => ({}))) as ApiError;
-        const message = mapError(err.error);
+        const message = mapApiError(err, "Something went wrong. Please try again.");
         setError(message);
         toast.error(message);
         return;
@@ -222,14 +223,6 @@ export function EditLinkForm({
           className="rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           {isPending ? "Saving…" : "Save changes"}
-        </button>
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={isPending}
-          className="rounded-md border border-destructive/40 bg-background px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
-        >
-          Delete link
         </button>
       </div>
 
@@ -389,21 +382,4 @@ function ShortLinkBox({
       </div>
     </div>
   );
-}
-
-function mapError(code: string): string {
-  switch (code) {
-    case "not-found":
-      return "This manage URL is no longer valid — the link may have been deleted or expired.";
-    case "invalid-input":
-      return "Please check the form and try again.";
-    case "forbidden-protocol":
-      return "URL must be http(s). Other protocols aren't allowed.";
-    case "self-redirect":
-      return "URL can't point at this shortener.";
-    case "private-host":
-      return "URL can't point at a private or loopback host.";
-    default:
-      return "Something went wrong. Please try again.";
-  }
 }

@@ -3,8 +3,7 @@ import { getStorage } from "@/lib/storage-singleton";
 import { readLink } from "@/lib/links";
 import { validateSlug } from "@/lib/slug";
 import { suggest } from "@/lib/suggestions";
-import { hashIp } from "@/lib/hash";
-import { getClientIp } from "@/lib/request";
+import { getHashedClientIp } from "@/lib/request";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export async function GET(request: Request) {
@@ -12,8 +11,7 @@ export async function GET(request: Request) {
 
   // Rate limit BEFORE the lookup — every check counts, valid or not. This
   // stops the endpoint from being used as a slug enumeration oracle.
-  const ip = getClientIp(request);
-  const ipHash = await hashIp(ip, process.env.IP_SALT ?? "");
+  const ipHash = await getHashedClientIp(request);
   const rl = await checkRateLimit(storage, "slug-check", ipHash);
   if (!rl.ok) {
     return rateLimitResponse(rl.retryAfterSeconds, "slug-check");
