@@ -11,6 +11,11 @@ import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBaseUrl, getOwnHost } from "@/lib/env";
 import { isSameOriginRequest } from "@/lib/csrf";
 
+// `validateUrl` now DNS-resolves the hostname (via `node:dns.promises.lookup`),
+// which is Node-only. Pin this route to the Node runtime explicitly — the
+// routes file doesn't otherwise require Node, so the default isn't reliable.
+export const runtime = "nodejs";
+
 const RequestSchema = z.object({
   url: z.string().min(1).max(2048),
   slug: z.string().max(64).optional(),
@@ -41,7 +46,7 @@ export async function POST(request: Request) {
 
   // Validate URL first — it's a more useful error than a slug error if both
   // are bad.
-  const urlResult = validateUrl(url, ownHost());
+  const urlResult = await validateUrl(url, ownHost());
   if (!urlResult.ok) {
     return NextResponse.json({ error: urlResult.reason }, { status: 422 });
   }
