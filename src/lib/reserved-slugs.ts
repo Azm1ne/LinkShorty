@@ -41,4 +41,5 @@ export const RESERVED_SLUGS = new Set<string>([
   "ftp",
   "cdn",
   "app",
+  "password",
 ]);
