@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { generateToken, hashEditToken, hashIp, hashPassword } from "./hash";
+import {
+  generateToken,
+  hashEditToken,
+  hashIp,
+  hashPassword,
+  verifyPassword,
+} from "./hash";
 
 describe("hashIp", () => {
   it("returns a 64-char hex string", async () => {
@@ -33,17 +39,53 @@ describe("hashEditToken", () => {
   });
 });
 
-describe("hashPassword", () => {
-  it("produces different hashes for same password on different slugs", async () => {
+describe("hashPassword (Argon2id)", () => {
+  it("produces a standard Argon2id PHC string", async () => {
+    const h = await hashPassword("hunter2", "slug-a");
+    expect(h).toMatch(/^\$argon2id\$v=19\$m=65536,t=3,p=4\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/);
+  });
+
+  it("uses a different salt on each call (so hashes are unique)", async () => {
+    const a = await hashPassword("hunter2", "slug-a");
+    const b = await hashPassword("hunter2", "slug-a");
+    expect(a).not.toBe(b);
+  });
+
+  it("produces different hashes for the same password on different slugs", async () => {
+    // Argon2id's per-hash salt already covers this — but the contract
+    // should still hold even if slug eventually participates in the hash.
     const a = await hashPassword("hunter2", "slug-a");
     const b = await hashPassword("hunter2", "slug-b");
     expect(a).not.toBe(b);
   });
 
-  it("is deterministic", async () => {
+  it("produces different hashes for different passwords", async () => {
     const a = await hashPassword("hunter2", "slug-a");
-    const b = await hashPassword("hunter2", "slug-a");
-    expect(a).toBe(b);
+    const b = await hashPassword("correct horse", "slug-a");
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("verifyPassword", () => {
+  it("returns true for the correct password", async () => {
+    const stored = await hashPassword("hunter2", "slug-a");
+    expect(await verifyPassword("hunter2", stored, "slug-a")).toBe(true);
+  });
+
+  it("returns false for the wrong password", async () => {
+    const stored = await hashPassword("hunter2", "slug-a");
+    expect(await verifyPassword("wrong", stored, "slug-a")).toBe(false);
+  });
+
+  it("returns false when the slug doesn't match", async () => {
+    // The slug is bound into the prehash, so the same password under a
+    // different slug must not verify. This is the domain-separation guarantee.
+    const stored = await hashPassword("hunter2", "slug-a");
+    expect(await verifyPassword("hunter2", stored, "slug-b")).toBe(false);
+  });
+
+  it("returns false for a malformed stored hash", async () => {
+    expect(await verifyPassword("hunter2", "not-an-argon2-hash", "slug-a")).toBe(false);
   });
 });
 

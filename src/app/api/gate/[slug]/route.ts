@@ -2,10 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getStorage } from "@/lib/storage-singleton";
 import { readLink, readPasswordHash } from "@/lib/links";
-import {
-  constantTimeEqualHex,
-  hashPassword,
-} from "@/lib/hash";
+import { verifyPassword } from "@/lib/hash";
 import { getHashedClientIp } from "@/lib/request";
 import { checkRateLimitFor, rateLimitResponse } from "@/lib/rate-limit";
 import {
@@ -64,8 +61,8 @@ export async function POST(request: Request, ctx: RouteContext) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
 
-  const submittedHash = await hashPassword(parsed.data.password, slug);
-  if (!constantTimeEqualHex(storedHash, submittedHash)) {
+  const ok = await verifyPassword(parsed.data.password, storedHash, slug);
+  if (!ok) {
     return NextResponse.json({ error: "invalid-password" }, { status: 401 });
   }
 

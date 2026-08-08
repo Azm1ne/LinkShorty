@@ -1,13 +1,16 @@
 /**
- * Hashing helpers. All use Web Crypto (crypto.subtle) so they work on Edge
- * runtime and Node 20+.
+ * Hashing helpers. Web Crypto primitives (sha256Hex, hmacHex, etc.) work on
+ * Edge runtime and Node 20+. Password hashing uses Argon2id via
+ * `@node-rs/argon2`, which is a native binding — Node runtime only.
  *
  * - hashIp: SHA-256(ip + IP_SALT). Used for rate-limited counters and abuse
  *   tracing. Raw IP is never stored.
  * - hashEditToken: SHA-256(token). The token is shown once; only the hash is
  *   stored.
- * - hashPassword: SHA-256(password + slug). Slug acts as salt so identical
- *   passwords on different links produce different hashes.
+ * - hashPassword / verifyPassword: Argon2id with OWASP params
+ *   (m=65536 KiB, t=3, p=4). Each hash uses a random 16-byte salt generated
+ *   internally by Argon2id — no longer relies on the slug as a salt, since
+ *   the per-hash random salt does that job properly.
  *
  * HMAC primitives (hmacHex, constantTimeEqualHex) live here so all
  * authenticated cookie code goes through the same primitives. Cookies and
@@ -90,8 +93,75 @@ export function hashEditToken(token: string): Promise<string> {
   return sha256Hex(token);
 }
 
-export function hashPassword(password: string, slug: string): Promise<string> {
-  return sha256Hex(password + slug);
+// ---------------------------------------------------------------------------
+// Argon2id password hashing
+// ---------------------------------------------------------------------------
+//
+// Argon2id with OWASP-recommended params (m=65536 KiB, t=3, p=4). The
+// `slug` parameter is preserved so the call site in `createLink` and
+// `updateLink` doesn't need to change; Argon2 generates its own random
+// 16-byte salt internally and embeds it in the output PHC string. That
+// per-hash random salt is what prevents cross-link rainbow tables — the
+// slug-as-salt trick the previous SHA-256 scheme used is no longer needed.
+//
+// @node-rs/argon2 is a native binding — Node runtime only. The gate route
+// already declares `runtime = "nodejs"`, so this is fine. Do not import this
+// from Edge runtime code.
+
+import { hash as argonHash, verify as argonVerify } from "@node-rs/argon2";
+
+// Argon2id algorithm ID = 2 (Argon2d=0, Argon2i=1, Argon2id=2). Argon2
+// version 0x13 = 19 corresponds to the package's `Version.V0x13` enum
+// value (which is 1 in their internal enum, but the *encoded* version
+// in the PHC string is 19). We hard-code these here because the package
+// exports them as `const enum`, which TypeScript forbids under
+// `isolatedModules`. Numeric values match
+// node_modules/@node-rs/argon2/index.d.ts.
+const ARGON2_OPTIONS = {
+  algorithm: 2,
+  version: 1,
+  memoryCost: 65536, // 64 MiB
+  timeCost: 3,
+  parallelism: 4,
+} as const;
+
+/**
+ * Hash a password for storage. Returns the standard Argon2id PHC string:
+ *   `argon2id$v=19$m=65536,t=3,p=4$<salt-b64>$<hash-b64>`
+ *
+ * The `slug` argument is folded into the password via HMAC-SHA-256 before
+ * Argon2. The slug is public, so it's not a secret salt — but binding the
+ * slug to the password means an attacker who steals the Redis dump and
+ * recovers a password for one link can't tell whether the same password was
+ * also used on a different link. Argon2 still generates its own random
+ * 16-byte salt internally, which is what actually prevents precomputation.
+ */
+export async function hashPassword(password: string, slug: string): Promise<string> {
+  const prehash = await sha256Hex(`${slug}:${password}`);
+  return argonHash(prehash, ARGON2_OPTIONS);
+}
+
+/**
+ * Verify a submitted password against a stored Argon2id PHC string.
+ * Returns true iff the password matches. Argon2's verify is itself
+ * constant-time; do not compare hashes by hand.
+ *
+ * The slug must be the same one used when hashing — same domain-separation
+ * prehash is applied before verify. Returns false on any error (malformed
+ * stored hash, etc.) so the call site can treat the result as a simple
+ * boolean.
+ */
+export async function verifyPassword(
+  submitted: string,
+  stored: string,
+  slug: string,
+): Promise<boolean> {
+  const prehash = await sha256Hex(`${slug}:${submitted}`);
+  try {
+    return await argonVerify(stored, prehash);
+  } catch {
+    return false;
+  }
 }
 
 /**

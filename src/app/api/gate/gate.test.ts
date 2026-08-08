@@ -158,11 +158,11 @@ describe("POST /api/gate/[slug]", () => {
     expect(ok.status).toBe(200);
   });
 
-  it("uses hashPassword so the stored hash depends on the slug", async () => {
+  it("uses hashPassword which produces an Argon2id PHC string", async () => {
     // Sanity check on the hash scheme used in this route.
     const a = await hashPassword("hunter2", "slug-a");
     const b = await hashPassword("hunter2", "slug-b");
     expect(a).not.toBe(b);
-    expect(a).toMatch(/^[a-f0-9]{64}$/);
+    expect(a).toMatch(/^\$argon2id\$v=19\$/);
   });
 });
