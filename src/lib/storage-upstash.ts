@@ -4,9 +4,9 @@ import type { CounterResult, Hash, IndexEntry, Storage } from "./storage";
 /**
  * Upstash Redis adapter. Uses the REST API so it works on Edge runtime.
  *
- * The ZRANGEBYLEX semantics here are simplified: we assume the caller passes
- * a `min`/`max` pair that represents a slug prefix scan. We use ZRANGEBYLEX
- * with the `+` / `-` sentinels as appropriate.
+ * The `links:index` sorted set is used for the admin list. For slug prefix
+ * search, we use `zrange` with lex bounds (Upstash supports this via the
+ * `[string` / `(string` syntax).
  */
 export class UpstashStorage implements Storage {
   private client: Redis;
@@ -20,9 +20,8 @@ export class UpstashStorage implements Storage {
   }
 
   async hgetall(key: string): Promise<Hash | null> {
-    const result = await this.r.hgetall(key);
+    const result = await this.r.hgetall<Hash>(key);
     if (!result) return null;
-    // Upstash returns hashes as a plain object Record<string, string>
     return result as Hash;
   }
 
@@ -63,12 +62,24 @@ export class UpstashStorage implements Storage {
     value: string,
     opts?: { exSeconds?: number; nx?: boolean },
   ): Promise<boolean> {
-    // Build the SET args. Upstash's `set` accepts an `ex` and `nx` option.
-    const result = await this.r.set(key, value, {
-      ...(opts?.exSeconds !== undefined ? { ex: opts.exSeconds } : {}),
-      ...(opts?.nx ? { nx: true } : {}),
-    });
-    return result === "OK" || result === true;
+    // The Upstash typing for `set` requires all of ex/px/etc to be specified
+    // together. We assemble the right shape based on which flags are set.
+    // NX mode: returns "OK" on success, null when NX blocked the write.
+    // Plain mode: always returns "OK".
+    if (opts?.nx && opts.exSeconds !== undefined) {
+      const result = await this.r.set(key, value, { nx: true, ex: opts.exSeconds });
+      return result !== null;
+    }
+    if (opts?.nx) {
+      const result = await this.r.set(key, value, { nx: true });
+      return result !== null;
+    }
+    if (opts?.exSeconds !== undefined) {
+      const result = await this.r.set(key, value, { ex: opts.exSeconds });
+      return result !== null;
+    }
+    const result = await this.r.set(key, value);
+    return result !== null;
   }
 
   async incr(key: string): Promise<number> {
@@ -91,7 +102,6 @@ export class UpstashStorage implements Storage {
   }
 
   async zrevrange(key: string, start: number, stop: number): Promise<IndexEntry[]> {
-    // Upstash: ZRANGE with REV returns members; we need scores.
     const withScores = await this.r.zrange(key, start, stop, {
       rev: true,
       withScores: true,
@@ -101,7 +111,6 @@ export class UpstashStorage implements Storage {
       if (Array.isArray(entry) && entry.length === 2) {
         return { member: String(entry[0]), score: Number(entry[1]) };
       }
-      // Fallback if format is unexpected
       const obj = entry as { member?: string; score?: number };
       return { member: String(obj.member ?? ""), score: Number(obj.score ?? 0) };
     });
@@ -113,8 +122,13 @@ export class UpstashStorage implements Storage {
     max: string,
     limit?: number,
   ): Promise<string[]> {
-    const opts = limit !== undefined ? { limit } : {};
-    const result = await this.r.zrangebylex(key, min, max, opts);
+    // Upstash uses ZRANGE with lex bounds; the second overload accepts
+    // `[string` / `(string` / `-` / `+` values for min/max.
+    const opts: { byLex: true; limit?: number } = { byLex: true };
+    if (limit !== undefined) opts.limit = limit;
+    const mins = min as `[${string}` | `(${string}` | "-" | "+";
+    const maxs = max as `[${string}` | `(${string}` | "-" | "+";
+    const result = await this.r.zrange(key, mins, maxs, opts);
     return Array.isArray(result) ? result.map(String) : [];
   }
 
