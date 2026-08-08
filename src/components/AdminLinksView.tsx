@@ -102,10 +102,21 @@ export function AdminLinksView() {
   }
 
   function handleSignOut() {
-    // The cookie is set via the login route; we don't have a logout endpoint
-    // yet. Clearing the cookie client-side is enough for the prototype.
-    document.cookie = "ls_admin=; Path=/; Max-Age=0; SameSite=Strict";
-    router.refresh();
+    // `ls_admin` is set with httpOnly, so client-side `document.cookie` can't
+    // touch it. POST to the logout endpoint, which returns Set-Cookie with
+    // Max-Age=0, then navigate to the admin page so the cleared cookie takes
+    // effect (router.refresh alone wouldn't show the logged-out state).
+    startTransition(async () => {
+      const res = await fetch("/api/admin/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        toast.error("Sign out failed. Try again.");
+        return;
+      }
+      router.push("/admin");
+    });
   }
 
   return (
