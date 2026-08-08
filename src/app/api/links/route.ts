@@ -9,6 +9,7 @@ import { getHashedClientIp } from "@/lib/request";
 import { generateAutoSlug } from "@/lib/auto-slug";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { getBaseUrl, getOwnHost } from "@/lib/env";
+import { isSameOriginRequest } from "@/lib/csrf";
 
 const RequestSchema = z.object({
   url: z.string().min(1).max(2048),
@@ -22,11 +23,15 @@ function ownHost(): string {
 }
 
 export async function POST(request: Request) {
+  if (!(await isSameOriginRequest(request))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = RequestSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "invalid-input", details: parsed.error.issues },
+      { error: "invalid-input" },
       { status: 400 },
     );
   }

@@ -42,9 +42,12 @@ export async function POST(request: Request) {
   let expected: string;
   try {
     expected = getAdminPassword();
-  } catch (err) {
+  } catch {
+    // Logged server-side via the thrown error in env.ts. Don't echo the
+    // thrown message to the client — it could include file paths or
+    // deployment details.
     return NextResponse.json(
-      { error: "admin-not-configured", message: (err as Error).message },
+      { error: "admin-not-configured" },
       { status: 500 },
     );
   }

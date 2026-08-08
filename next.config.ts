@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
+          // HSTS for one year, including subdomains, preload-eligible. Vercel
+          // already terminates TLS, so this only matters if the operator
+          // ever moves to a custom domain.
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains; preload",
+          },
         ],
       },
     ];

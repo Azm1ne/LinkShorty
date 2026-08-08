@@ -5,6 +5,7 @@ import { readLink, updateLink, deleteLink, findSlugByToken } from "@/lib/links";
 import { validateUrl } from "@/lib/url";
 import { clampExpiry } from "@/lib/expiry";
 import { getOwnHost } from "@/lib/env";
+import { isSameOriginRequest } from "@/lib/csrf";
 
 interface RouteContext {
   params: Promise<{ token: string }>;
@@ -29,11 +30,15 @@ function ownHost(): string {
 export async function PATCH(request: Request, ctx: RouteContext) {
   const { token } = await ctx.params;
 
+  if (!(await isSameOriginRequest(request))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = PatchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "invalid-input", details: parsed.error.issues },
+      { error: "invalid-input" },
       { status: 400 },
     );
   }
@@ -79,8 +84,12 @@ export async function PATCH(request: Request, ctx: RouteContext) {
   return NextResponse.json({ slug, link: updated });
 }
 
-export async function DELETE(_request: Request, ctx: RouteContext) {
+export async function DELETE(request: Request, ctx: RouteContext) {
   const { token } = await ctx.params;
+
+  if (!(await isSameOriginRequest(request))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const storage = getStorage();
   const slug = await findSlugByToken(storage, token);

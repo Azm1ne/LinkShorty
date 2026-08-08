@@ -2,7 +2,9 @@
  * GET   /api/admin/links?offset=&limit=&search=
  * DELETE /api/admin/links   body: { slug }
  *
- * Admin-only. Both verbs require a valid `ls_admin` cookie.
+ * Admin-only. Both verbs require a valid `ls_admin` cookie. State-changing
+ * verbs (DELETE here) ALSO require an Origin header that matches the
+ * deployment origin — same-site defence in depth on top of SameSite=Strict.
  *
  * GET returns `{ links, total, offset, limit }`. Newest-first. When
  * `search` is a slug prefix, results are filtered to that prefix and
@@ -26,6 +28,7 @@ import {
   readCookieFromRequest,
   verifyAdminCookie,
 } from "@/lib/cookie";
+import { isSameOriginRequest } from "@/lib/csrf";
 
 const DeleteSchema = z.object({
   slug: z
@@ -73,11 +76,15 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  if (!(await isSameOriginRequest(request))) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = DeleteSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: "invalid-input", details: parsed.error.issues },
+      { error: "invalid-input" },
       { status: 400 },
     );
   }
