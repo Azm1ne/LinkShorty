@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getStorage } from "@/lib/storage-singleton";
-import { slugExists } from "@/lib/links";
+import { readLink } from "@/lib/links";
 import { validateSlug } from "@/lib/slug";
+import { suggest } from "@/lib/suggestions";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -16,19 +17,22 @@ export async function GET(request: Request) {
   }
 
   const storage = getStorage();
-  const exists = await slugExists(storage, result.slug);
-  if (!exists) {
+  const existing = await readLink(storage, result.slug);
+  if (!existing) {
     return NextResponse.json({
       available: true,
       slug: result.slug,
     });
   }
 
-  // Suggestions are filled in by T06.
+  // Suggest alternatives. Suggestions are themselves validated against the
+  // slug rules and reserved list, so the user can pick any of them safely.
+  const suggestions = suggest(result.slug, 3);
+
   return NextResponse.json({
     available: false,
     reason: "taken",
     slug: result.slug,
-    suggestions: [],
+    suggestions,
   });
 }

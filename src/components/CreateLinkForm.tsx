@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ExpiryPicker, type ExpiryValue } from "./ExpiryPicker";
+import { SlugInput } from "./SlugInput";
 
 interface CreateResponse {
   slug: string;
@@ -15,8 +16,6 @@ interface CreateResponse {
 interface ApiError {
   error: string;
 }
-
-const SLUG_REGEX = /^[a-z0-9]([a-z0-9-]{2,61})[a-z0-9]$/;
 
 export function CreateLinkForm() {
   const router = useRouter();
@@ -97,36 +96,11 @@ export function CreateLinkForm() {
         />
       </div>
 
-      <div className="flex flex-col gap-2">
-        <label htmlFor="slug" className="text-sm font-medium">
-          Slug
-        </label>
-        <div className="flex items-center rounded-md border border-input bg-background transition-colors focus-within:border-foreground">
-          <span
-            aria-hidden="true"
-            className="select-none pl-3 font-mono text-sm text-muted-foreground"
-          >
-            {baseUrl()}/{" "}
-          </span>
-          <input
-            id="slug"
-            name="slug"
-            type="text"
-            value={slug}
-            onChange={(e) => setSlug(e.target.value)}
-            placeholder="auto-generated if blank"
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-            pattern={SLUG_REGEX.source}
-            className="flex-1 bg-transparent px-1 py-2 font-mono text-sm placeholder:text-muted-foreground/60 focus:outline-none"
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          4–63 chars. Lowercase letters, digits, and hyphens. Can&apos;t start or
-          end with a hyphen.
-        </p>
-      </div>
+      <SlugInput
+        baseUrl={baseUrl()}
+        value={slug}
+        onChange={setSlug}
+      />
 
       <fieldset className="flex flex-col gap-3">
         <legend className="text-sm font-medium">Expiry</legend>
@@ -200,6 +174,8 @@ function mapError(code: string): string {
       return "URL can't point at a private or loopback host.";
     case "invalid-input":
       return "Please check the form and try again.";
+    case "auto-generation-failed":
+      return "Couldn't auto-generate a slug. Please try one manually.";
     default:
       return "Something went wrong. Please try again.";
   }
