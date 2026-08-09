@@ -74,7 +74,7 @@ export async function POST(request: Request, ctx: RouteContext) {
       : DEFAULT_COOKIE_TTL_SECONDS;
 
   const expiresAtMs = Date.now() + ttlSeconds * 1000;
-  const cookieValue = await signCookie(slug, expiresAtMs);
+  const cookieValue = await signCookie(slug, expiresAtMs, storedHash);
 
   const res = NextResponse.json(
     {

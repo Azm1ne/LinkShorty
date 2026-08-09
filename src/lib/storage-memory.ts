@@ -291,4 +291,59 @@ export class MemoryStorage implements Storage {
   async mget(keys: string[]): Promise<(string | null)[]> {
     return Promise.all(keys.map((k) => this.get(k)));
   }
+
+  // --- Transactions ---
+  // The in-memory store is process-local and effectively atomic within a
+  // single request, so each transaction method just delegates to the existing
+  // helpers in the same order. Order mirrors the Upstash `multi()` payload so
+  // both implementations behave the same when interleaving with concurrent
+  // reads on the same client.
+
+  async createLinkTransaction(
+    hashKey: string,
+    fields: Record<string, string>,
+    expireAtUnixSeconds: number | null,
+    indexKey: string,
+    score: number,
+    member: string,
+    tokenIndexKey: string | null,
+    tokenIndexValue: string | null,
+  ): Promise<void> {
+    await this.hsetMany(hashKey, fields);
+    if (expireAtUnixSeconds !== null) {
+      await this.expireAt(hashKey, expireAtUnixSeconds);
+    }
+    await this.zadd(indexKey, score, member);
+    if (tokenIndexKey && tokenIndexValue) {
+      await this.set(tokenIndexKey, tokenIndexValue);
+    }
+  }
+
+  async updateLinkTransaction(
+    hashKey: string,
+    fields: Record<string, string>,
+    expiry: { type: "set"; unixSeconds: number } | { type: "clear" } | null,
+  ): Promise<void> {
+    if (Object.keys(fields).length > 0) {
+      await this.hsetMany(hashKey, fields);
+    }
+    if (expiry?.type === "set") {
+      await this.expireAt(hashKey, expiry.unixSeconds);
+    } else if (expiry?.type === "clear") {
+      await this.clearExpiry(hashKey);
+    }
+  }
+
+  async deleteLinkTransaction(
+    hashKey: string,
+    indexKey: string,
+    member: string,
+    tokenIndexKey: string | null,
+  ): Promise<void> {
+    await this.del(hashKey);
+    await this.zrem(indexKey, member);
+    if (tokenIndexKey) {
+      await this.del(tokenIndexKey);
+    }
+  }
 }

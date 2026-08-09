@@ -201,4 +201,119 @@ describe("MemoryStorage", () => {
     expect(await s.exists("h")).toBe(false);
     expect(await s.exists("z")).toBe(false);
   });
+
+  describe("transactions", () => {
+    it("createLinkTransaction writes hash, sets TTL, indexes, and sets reverse-lookup", async () => {
+      const clock = 1_700_000_000_000;
+      const s = new MemoryStorage(() => clock);
+      await s.createLinkTransaction(
+        "link:foo",
+        { url: "https://x", createdAt: "1" },
+        Math.floor(clock / 1000) + 60,
+        "links:index",
+        1,
+        "foo",
+        "tokens:index:hash",
+        "foo",
+      );
+      expect(await s.hgetall("link:foo")).toEqual({
+        url: "https://x",
+        createdAt: "1",
+      });
+      expect(await s.ttl("link:foo")).toBe(60);
+      const idx = await s.zrevrange("links:index", 0, -1);
+      expect(idx).toEqual([{ member: "foo", score: 1 }]);
+      expect(await s.get("tokens:index:hash")).toBe("foo");
+    });
+
+    it("createLinkTransaction skips TTL when expireAtUnixSeconds is null", async () => {
+      const s = new MemoryStorage();
+      await s.createLinkTransaction(
+        "link:foo",
+        { url: "https://x" },
+        null,
+        "links:index",
+        1,
+        "foo",
+        null,
+        null,
+      );
+      expect(await s.ttl("link:foo")).toBeNull();
+    });
+
+    it("createLinkTransaction skips reverse-lookup when tokenIndexKey is null", async () => {
+      const s = new MemoryStorage();
+      await s.createLinkTransaction(
+        "link:foo",
+        { url: "https://x" },
+        null,
+        "links:index",
+        1,
+        "foo",
+        null,
+        null,
+      );
+      // No tokens:index:* keys should have been written.
+      expect(await s.get("tokens:index:anything")).toBeNull();
+    });
+
+    it("updateLinkTransaction sets fields and TTL together", async () => {
+      const clock = 1_700_000_000_000;
+      const s = new MemoryStorage(() => clock);
+      await s.hsetMany("link:foo", { url: "https://old" });
+      await s.updateLinkTransaction(
+        "link:foo",
+        { url: "https://new" },
+        { type: "set", unixSeconds: Math.floor(clock / 1000) + 60 },
+      );
+      expect(await s.hgetall("link:foo")).toEqual({ url: "https://new" });
+      expect(await s.ttl("link:foo")).toBe(60);
+    });
+
+    it("updateLinkTransaction clears the TTL when expiry type is 'clear'", async () => {
+      const clock = 1_700_000_000_000;
+      const s = new MemoryStorage(() => clock);
+      await s.hsetMany("link:foo", { url: "https://x" });
+      await s.expireAt("link:foo", Math.floor(clock / 1000) + 60);
+      expect(await s.ttl("link:foo")).toBe(60);
+      await s.updateLinkTransaction(
+        "link:foo",
+        { url: "https://new" },
+        { type: "clear" },
+      );
+      expect(await s.ttl("link:foo")).toBeNull();
+    });
+
+    it("updateLinkTransaction is a no-op when both fields and expiry are empty", async () => {
+      const s = new MemoryStorage();
+      await s.hsetMany("link:foo", { url: "https://x" });
+      await s.updateLinkTransaction("link:foo", {}, null);
+      expect(await s.hgetall("link:foo")).toEqual({ url: "https://x" });
+    });
+
+    it("deleteLinkTransaction removes hash, index entry, and reverse-lookup", async () => {
+      const s = new MemoryStorage();
+      await s.hsetMany("link:foo", { url: "https://x" });
+      await s.zadd("links:index", 1, "foo");
+      await s.set("tokens:index:hash", "foo");
+      await s.deleteLinkTransaction(
+        "link:foo",
+        "links:index",
+        "foo",
+        "tokens:index:hash",
+      );
+      expect(await s.exists("link:foo")).toBe(false);
+      expect(await s.zrevrange("links:index", 0, -1)).toEqual([]);
+      expect(await s.get("tokens:index:hash")).toBeNull();
+    });
+
+    it("deleteLinkTransaction skips reverse-lookup when tokenIndexKey is null", async () => {
+      const s = new MemoryStorage();
+      await s.hsetMany("link:foo", { url: "https://x" });
+      await s.zadd("links:index", 1, "foo");
+      await s.deleteLinkTransaction("link:foo", "links:index", "foo", null);
+      expect(await s.exists("link:foo")).toBe(false);
+      expect(await s.zrevrange("links:index", 0, -1)).toEqual([]);
+    });
+  });
 });

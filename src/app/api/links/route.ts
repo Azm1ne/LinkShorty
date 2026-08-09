@@ -87,11 +87,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "slug-taken" }, { status: 409 });
   }
 
+  // Atomically claim the slug so two requests that both pass the existence
+  // check can't both proceed into createLink and race. SET NX on a dedicated
+  // key — short TTL so a claim can never get stuck if createLink fails
+  // after this point.
+  const claimed = await storage.set(`slug-claim:${resolvedSlug}`, "1", {
+    nx: true,
+    exSeconds: 30,
+  });
+  if (!claimed) {
+    return NextResponse.json({ error: "slug-taken" }, { status: 409 });
+  }
+
   const ipHash = await getHashedClientIp(request);
 
   // Tiered rate limit (T10): after validation, before persisting.
-  // Malformed input never reaches here, so the create limit isn't penalised
-  // for bad payloads. Slug-check has its own counter on /api/links/check.
   const rateTier = minutes > 0 ? "create-expiring" : "create-permanent";
   const rl = await checkRateLimit(storage, rateTier, ipHash);
   if (!rl.ok) {

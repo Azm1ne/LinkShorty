@@ -48,7 +48,10 @@ export async function newEditToken(): Promise<{ token: string; hash: string }> {
 }
 
 /**
- * Persist a new link. Sets native TTL when expiresAt > 0. Adds to the index.
+ * Persist a new link. Sets native TTL when expiresAt > 0. Adds to the index
+ * and the tokens:index reverse-lookup — all in a single transaction so a
+ * partial failure can't leave the link visible but not in the index (or
+ * vice versa).
  *
  * Caller is responsible for slug validation (this function trusts the slug).
  */
@@ -59,25 +62,24 @@ export async function createLink(
   const { slug, url, expiresAt, password, ipHash, editTokenHash, createdAt } = input;
   const passwordHash = password ? await hashPassword(password, slug) : "";
 
-  // One multi-field HSET instead of seven per-field writes. On Upstash this
-  // collapses the wire cost from 7 round-trips to 1 (≈300 ms saved per create
-  // at typical Upstash REST latencies).
-  await storage.hsetMany(linkKey(slug), {
-    url,
-    createdAt: String(createdAt),
-    expiresAt: String(expiresAt),
-    editTokenHash,
-    passwordHash,
-    createdByIp: ipHash,
-    previousUrl: "",
-  });
-
-  if (expiresAt > 0) {
-    await storage.expireAt(linkKey(slug), Math.floor(expiresAt / 1000));
-  }
-
-  await storage.zadd(LINKS_INDEX, createdAt, slug);
-  await storage.set(tokenIndexKey(editTokenHash), slug);
+  await storage.createLinkTransaction(
+    linkKey(slug),
+    {
+      url,
+      createdAt: String(createdAt),
+      expiresAt: String(expiresAt),
+      editTokenHash,
+      passwordHash,
+      createdByIp: ipHash,
+      previousUrl: "",
+    },
+    expiresAt > 0 ? Math.floor(expiresAt / 1000) : null,
+    LINKS_INDEX,
+    createdAt,
+    slug,
+    tokenIndexKey(editTokenHash),
+    slug,
+  );
 }
 
 /** Read a link from storage. Returns null if missing or expired. */
@@ -140,7 +142,8 @@ export async function slugExists(
 /**
  * Update an existing link. Caller is responsible for verifying the edit
  * token. Updates url, expiresAt, and passwordHash; updates previousUrl when
- * the destination changes.
+ * the destination changes. All writes happen in a single transaction so a
+ * partial failure can't leave (e.g.) previousUrl pointing at the same URL.
  */
 export async function updateLink(
   storage: Storage,
@@ -156,41 +159,51 @@ export async function updateLink(
     throw new Error("link not found");
   }
 
+  const fields: Record<string, string> = {};
   if (patch.url !== undefined && patch.url !== existing.url) {
-    await storage.hset(linkKey(slug), "previousUrl", existing.url ?? "");
-    await storage.hset(linkKey(slug), "url", patch.url);
+    fields.previousUrl = existing.url ?? "";
+    fields.url = patch.url;
   }
   if (patch.expiresAt !== undefined) {
-    await storage.hset(linkKey(slug), "expiresAt", String(patch.expiresAt));
-    if (patch.expiresAt > 0) {
-      await storage.expireAt(linkKey(slug), Math.floor(patch.expiresAt / 1000));
-    } else {
-      // Going permanent — Redis would otherwise keep the old EXPIREAT,
-      // so the hash gets evicted early and `readLink` returns null. PERSIST
-      // drops the TTL but leaves the key intact.
-      await storage.clearExpiry(linkKey(slug));
-    }
+    fields.expiresAt = String(patch.expiresAt);
   }
   if (patch.password !== undefined) {
-    const passwordHash = patch.password
+    fields.passwordHash = patch.password
       ? await hashPassword(patch.password, slug)
       : "";
-    await storage.hset(linkKey(slug), "passwordHash", passwordHash);
   }
+
+  let expiry:
+    | { type: "set"; unixSeconds: number }
+    | { type: "clear" }
+    | null = null;
+  if (patch.expiresAt !== undefined) {
+    expiry =
+      patch.expiresAt > 0
+        ? { type: "set", unixSeconds: Math.floor(patch.expiresAt / 1000) }
+        : { type: "clear" };
+  }
+
+  await storage.updateLinkTransaction(linkKey(slug), fields, expiry);
 }
 
 /**
  * Delete a link entirely. Caller passes the `editTokenHash` so we don't need
  * an extra HGETALL just to clean up the tokens:index reverse-lookup entry.
+ * All three deletes (hash, index, reverse-lookup) run in a single
+ * transaction so a partial failure can't leave an orphaned index entry.
  */
 export async function deleteLink(
   storage: Storage,
   slug: string,
   editTokenHash: string,
 ): Promise<void> {
-  await storage.del(linkKey(slug));
-  await storage.zrem(LINKS_INDEX, slug);
-  await storage.del(tokenIndexKey(editTokenHash));
+  await storage.deleteLinkTransaction(
+    linkKey(slug),
+    LINKS_INDEX,
+    slug,
+    tokenIndexKey(editTokenHash),
+  );
 }
 
 /**

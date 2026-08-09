@@ -104,8 +104,10 @@ export class UpstashStorage implements Storage {
   }
 
   async incrWithTtl(key: string, windowSeconds: number): Promise<CounterResult> {
-    const count = await this.r.incr(key);
-    const ttlSet = await this.r.expire(key, windowSeconds, "NX");
+    const tx = this.r.multi();
+    tx.incr(key);
+    tx.expire(key, windowSeconds, "NX");
+    const [count, ttlSet] = await tx.exec<[number, number]>();
     return { count, ttlSet: ttlSet === 1 };
   }
 
@@ -114,18 +116,20 @@ export class UpstashStorage implements Storage {
   }
 
   async zrevrange(key: string, start: number, stop: number): Promise<IndexEntry[]> {
-    const withScores = await this.r.zrange(key, start, stop, {
+    const flat = await this.r.zrange(key, start, stop, {
       rev: true,
       withScores: true,
     });
-    if (!Array.isArray(withScores)) return [];
-    return withScores.map((entry) => {
-      if (Array.isArray(entry) && entry.length === 2) {
-        return { member: String(entry[0]), score: Number(entry[1]) };
-      }
-      const obj = entry as { member?: string; score?: number };
-      return { member: String(obj.member ?? ""), score: Number(obj.score ?? 0) };
-    });
+    if (!Array.isArray(flat)) return [];
+    const out: IndexEntry[] = [];
+    // Upstash returns a FLAT interleaved array [member, score, member, score, ...].
+    // Walk it in pairs. If we somehow get an odd-length response (which the
+    // Redis protocol shouldn't produce), drop the trailing unpaired element
+    // rather than emitting a `{member: <x>, score: NaN}` garbage entry.
+    for (let i = 0; i + 1 < flat.length; i += 2) {
+      out.push({ member: String(flat[i]), score: Number(flat[i + 1]) });
+    }
+    return out;
   }
 
   async zrangebylex(
@@ -155,5 +159,62 @@ export class UpstashStorage implements Storage {
   async mget(keys: string[]): Promise<(string | null)[]> {
     const result = await this.r.mget<string[]>(...keys);
     return result.map((v) => (v == null ? null : String(v)));
+  }
+
+  // --- Transactions ---
+
+  async createLinkTransaction(
+    hashKey: string,
+    fields: Record<string, string>,
+    expireAtUnixSeconds: number | null,
+    indexKey: string,
+    score: number,
+    member: string,
+    tokenIndexKey: string | null,
+    tokenIndexValue: string | null,
+  ): Promise<void> {
+    const tx = this.r.multi();
+    tx.hset(hashKey, fields);
+    if (expireAtUnixSeconds !== null) {
+      tx.expireat(hashKey, expireAtUnixSeconds);
+    }
+    tx.zadd(indexKey, { score, member });
+    if (tokenIndexKey && tokenIndexValue) {
+      tx.set(tokenIndexKey, tokenIndexValue);
+    }
+    await tx.exec();
+  }
+
+  async updateLinkTransaction(
+    hashKey: string,
+    fields: Record<string, string>,
+    expiry: { type: "set"; unixSeconds: number } | { type: "clear" } | null,
+  ): Promise<void> {
+    if (Object.keys(fields).length === 0 && expiry === null) return;
+    const tx = this.r.multi();
+    if (Object.keys(fields).length > 0) {
+      tx.hset(hashKey, fields);
+    }
+    if (expiry?.type === "set") {
+      tx.expireat(hashKey, expiry.unixSeconds);
+    } else if (expiry?.type === "clear") {
+      tx.persist(hashKey);
+    }
+    await tx.exec();
+  }
+
+  async deleteLinkTransaction(
+    hashKey: string,
+    indexKey: string,
+    member: string,
+    tokenIndexKey: string | null,
+  ): Promise<void> {
+    const tx = this.r.multi();
+    tx.del(hashKey);
+    tx.zrem(indexKey, member);
+    if (tokenIndexKey) {
+      tx.del(tokenIndexKey);
+    }
+    await tx.exec();
   }
 }

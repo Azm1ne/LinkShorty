@@ -1,7 +1,7 @@
 /**
  * Signed cookie helpers for the password gate and the admin session.
  *
- * Cookie payload format (gate):  `slug|expiresAtMs|hmacHex`
+ * Cookie payload format (gate):  `slug|expiresAtMs|passwordVersion|hmacHex`
  * Cookie payload format (admin): `admin|<expiresAtMs>|1|<hmacHex>`
  *
  *   - hmacHex   HMAC-SHA-256 over the rest of the payload, keyed by
@@ -57,35 +57,56 @@ async function verifyPayload(message: string, expectedHex: string): Promise<bool
 }
 
 /**
- * Sign a gate cookie value. Returns the encoded `slug|expiresAtMs|hmacHex`
- * string ready to write to a cookie.
+ * Sign a gate cookie value. Returns the encoded
+ * `slug|expiresAtMs|passwordVersion|hmacHex` string ready to write to a cookie.
+ *
+ * `passwordVersion` binds the cookie to the current password hash (SHA-256 or
+ * Argon2 digest — never plaintext). Any password change yields a new hash, so
+ * all previously-issued cookies will fail verification.
  */
-export async function signCookie(slug: string, expiresAtMs: number): Promise<string> {
-  const message = `${slug}|${expiresAtMs}`;
+export async function signCookie(
+  slug: string,
+  expiresAtMs: number,
+  passwordVersion: string,
+): Promise<string> {
+  const message = `${slug}|${expiresAtMs}|${passwordVersion}`;
   const sig = await signPayload(message);
   return `${message}|${sig}`;
 }
 
 /**
  * Verify a gate cookie value. Returns the parsed payload when the HMAC is
- * valid AND the expiry is in the future; otherwise null.
+ * valid, the expiry is in the future, AND the bound passwordVersion still
+ * matches the current password hash. Otherwise null.
+ *
+ * `currentPasswordVersion` is the link's current password hash. When the
+ * password is changed this hash changes, so all previously-issued cookies
+ * for this slug are revoked.
  *
  * Returns null (never throws) on malformed input, bad signature, wrong secret,
- * or expired grant.
+ * stale passwordVersion, or expired grant.
  */
-export async function verifyCookie(raw: string): Promise<GateGrant | null> {
+export async function verifyCookie(
+  raw: string,
+  currentPasswordVersion: string,
+): Promise<GateGrant | null> {
   if (!raw) return null;
   const parts = raw.split("|");
-  if (parts.length !== 3) return null;
-  const [slug, expiresStr, sig] = parts;
-  if (!slug || !expiresStr || !sig) return null;
+  if (parts.length !== 4) return null;
+  const [slug, expiresStr, passwordVersion, sig] = parts;
+  if (!slug || !expiresStr || !passwordVersion || !sig) return null;
 
   const expiresAtMs = Number(expiresStr);
   if (!Number.isFinite(expiresAtMs)) return null;
   if (expiresAtMs <= Date.now()) return null;
 
-  const ok = await verifyPayload(`${slug}|${expiresAtMs}`, sig);
+  const ok = await verifyPayload(
+    `${slug}|${expiresAtMs}|${passwordVersion}`,
+    sig,
+  );
   if (!ok) return null;
+
+  if (passwordVersion !== currentPasswordVersion) return null;
 
   return { slug, expiresAtMs };
 }

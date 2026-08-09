@@ -95,7 +95,7 @@ describe("listLinks", () => {
     expect(page.total).toBe(5);
   });
 
-  it("drops expired hashes lazily", async () => {
+  it("drops expired hashes lazily and self-heals the index", async () => {
     const past = Date.now() - 60_000;
     await seed(storage, {
       slug: "expired",
@@ -103,11 +103,31 @@ describe("listLinks", () => {
       expiresAt: past - 1,
     });
     await seed(storage, { slug: "live", createdAt: Date.now() });
+    // Before any list call, the index still has the stale entry.
+    expect(await storage.zcard("links:index")).toBe(2);
+
     const result = await listLinks(storage);
-    // The expired link is in the index but its hash has expired; the list
-    // skips it. Total reflects the unfiltered index size.
+    // The expired link is filtered out of the page; the first list call also
+    // ZREMs it from the index so subsequent calls don't rescan it.
     expect(result.links.map((l) => l.slug)).toEqual(["live"]);
-    expect(result.total).toBe(2);
+    expect(await storage.zcard("links:index")).toBe(1);
+  });
+
+  it("subsequent list calls reflect the self-healed index", async () => {
+    const past = Date.now() - 60_000;
+    await seed(storage, {
+      slug: "expired",
+      createdAt: past,
+      expiresAt: past - 1,
+    });
+    await seed(storage, { slug: "live", createdAt: Date.now() });
+
+    // First call self-heals.
+    await listLinks(storage);
+    // Second call sees the cleaned-up total.
+    const result = await listLinks(storage);
+    expect(result.total).toBe(1);
+    expect(result.links.map((l) => l.slug)).toEqual(["live"]);
   });
 
   it("returns empty list when index is empty", async () => {

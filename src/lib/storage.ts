@@ -74,4 +74,48 @@ export interface Storage {
 
   // Bulk
   mget(keys: string[]): Promise<(string | null)[]>;
+
+  // Transactions
+  /**
+   * Atomically HSET fields, optionally EXPIREAT, ZADD into an index, and SET
+   * a reverse-lookup value — used by createLink so a partial failure can't
+   * leave the link visible but not in the index (or vice versa).
+   *
+   * `tokenIndexKey` / `tokenIndexValue` are optional; when both are non-null,
+   * a reverse-lookup `SET tokenIndexKey tokenIndexValue` is included in the
+   * same transaction so the edit-token → slug map is consistent with the
+   * link's hash.
+   */
+  createLinkTransaction(
+    hashKey: string,
+    fields: Record<string, string>,
+    expireAtUnixSeconds: number | null,
+    indexKey: string,
+    score: number,
+    member: string,
+    tokenIndexKey: string | null,
+    tokenIndexValue: string | null,
+  ): Promise<void>;
+
+  /**
+   * Atomically HSET fields and set/clear the TTL — used by updateLink so a
+   * partial failure can't leave (e.g.) previousUrl pointing at the same URL.
+   */
+  updateLinkTransaction(
+    hashKey: string,
+    fields: Record<string, string>,
+    expiry: { type: "set"; unixSeconds: number } | { type: "clear" } | null,
+  ): Promise<void>;
+
+  /**
+   * Atomically DEL a hash, ZREM its index entry, and DEL the tokens:index
+   * reverse-lookup — used by deleteLink so the link's hash, index, and
+   * edit-token map are cleaned up together.
+   */
+  deleteLinkTransaction(
+    hashKey: string,
+    indexKey: string,
+    member: string,
+    tokenIndexKey: string | null,
+  ): Promise<void>;
 }

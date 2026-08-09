@@ -61,6 +61,11 @@ function recordFromHash(slug: string, hash: Record<string, string> | null): Link
  * Hydrate a list of slugs into LinkRecords, dropping any that have expired
  * or vanished. Used both for paginated ZREVRANGE results and for ZRANGEBYLEX
  * search results.
+ *
+ * Self-healing: when an index entry points at a hash that's gone (TTL swept
+ * it, or it was deleted from a different code path that didn't update the
+ * index), we ZREM the stale entry so we don't rescan it every list. Lazy
+ * reconciliation should converge the index on the next read.
  */
 async function hydrateSlugs(
   storage: Storage,
@@ -71,11 +76,19 @@ async function hydrateSlugs(
   for (const slug of slugs) {
     const hash = await storage.hgetall(linkKey(slug));
     if (!hash) {
-      // Already gone — skip silently. Lazy reconciliation drops it.
+      // Hash is gone (expired via TTL) but the index entry survived it.
+      // Self-heal so we don't rescan it every list.
+      await storage.zrem(LINKS_INDEX, slug);
       continue;
     }
     const rec = recordFromHash(slug, hash);
-    if (rec) out.push(rec);
+    if (!rec) {
+      // Hash exists but recordFromHash rejected it (lazy expiry).
+      // Same self-heal.
+      await storage.zrem(LINKS_INDEX, slug);
+      continue;
+    }
+    out.push(rec);
   }
   return out;
 }

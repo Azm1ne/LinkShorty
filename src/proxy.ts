@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getStorage } from "@/lib/storage-singleton";
-import { readLink } from "@/lib/links";
+import { readLink, readPasswordHash } from "@/lib/links";
 import { GATE_COOKIE_NAME, verifyCookie } from "@/lib/cookie";
 import { assertProductionEnv } from "@/lib/env";
 
@@ -73,8 +73,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // Password gate: rewrite to the gate page if the link is protected and the
   // visitor doesn't hold a valid signed cookie for this slug.
   if (link.hasPassword) {
+    const currentHash = (await readPasswordHash(storage, slug)) ?? "";
     const cookie = request.cookies.get(GATE_COOKIE_NAME);
-    const grant = cookie?.value ? await verifyCookie(cookie.value) : null;
+    const grant = cookie?.value
+      ? await verifyCookie(cookie.value, currentHash)
+      : null;
     if (!grant || grant.slug !== slug) {
       const gateUrl = new URL(`/${slug}/password`, request.url);
       return NextResponse.rewrite(gateUrl);
